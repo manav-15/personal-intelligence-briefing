@@ -1,0 +1,15 @@
+node_modules/
+.agents/
+skills-lock.json
+dist/
+.wrangler/
+.dev.vars*
+.env*
+!.env.example
+!.dev.vars.example
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+.DS_Store

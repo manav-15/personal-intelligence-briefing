@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+coverage/
+package-lock.json
+.agents/
+skills-lock.json

@@ -1,0 +1,56 @@
+# Personal Intelligence Briefing
+
+A single-user daily briefing app built on Cloudflare Workers. It will discover
+news from user-defined topics, retrieve bounded evidence, and produce concise,
+cited briefings with grounded follow-up chat.
+
+## Current status
+
+Increment 1 establishes the deployable React and Worker foundation. The root
+page is intentionally a small placeholder and `GET /api/health` reports the
+Worker status. Discovery, Durable Object persistence, AI, scheduling, and
+Cloudflare Access arrive in later reviewed increments.
+
+## Requirements
+
+- Node 24.x
+- npm 11+
+- A Cloudflare account is needed only for deployment
+
+## Local development
+
+```sh
+npm ci
+npm run dev
+```
+
+Visit the local URL printed by Vite. The app checks the Worker health endpoint
+on load.
+
+## Quality checks
+
+```sh
+npm run check
+```
+
+This runs formatting, linting, TypeScript checks, unit tests, and a production
+build. CI will run the same command.
+
+## Deployment
+
+Deployment is deliberately deferred until the Agent, Durable Object, Workflow,
+and Access bindings exist. The intended command is `npx wrangler deploy`; the
+final setup guide will document the required bindings, Access policy, and
+secrets.
+
+## Evidence limitations and planned improvements
+
+Google News results are discovery leads, not sufficient evidence for detailed
+summaries. The next feasibility increment will test Google News link resolution
+and bounded publisher-page retrieval. The app will retain citations, metadata,
+and summary provenance instead of full articles. It must disclose when a chat
+answer only has a feed excerpt or cannot retrieve an article.
+
+Planned extensions include a private SearXNG adapter, stronger readable-content
+extraction, source-quality controls, and evidence refreshes for deeper chat.
+They are intentionally not part of the first deployable slice.
