@@ -1,6 +1,27 @@
 # Next iteration: integrate local SearXNG and preserve fallback metadata
 
-Proposed on 2026-09-18. This plan is not implementation authorization.
+This document records the completed integration and its historical plan.
+The maintained milestone plan and next slice (3A: app shell and persistent
+topics) are now in [implementation-plan.md](implementation-plan.md).
+
+Implemented on 2026-09-18 after authorization. Awaiting user review.
+
+The local content lab now searches SearXNG through the Worker, preserves
+attributed snippets and optional dates, and retrieves individual articles.
+It shows evidence tiers, extraction text, source links, and partial failures.
+No AI summaries or persistence were added.
+
+Live checks returned ten candidates per initial topic. AI EWTN and world-news
+WFAE articles were readable; AP returned 403 and qualified for description
+fallback. Old and undated results remain visible with warnings. Last-day AI
+search returned no candidates during a Bing connection failure; the inspector
+defaults to Any time without silently widening selected filters. Paragraph
+extraction included footer/related text. Resolve freshness and extraction
+quality before trusting automated briefing output.
+Liverpool's Sports Illustrated lead returned 403 through the UI and exposed
+the attributed description fallback. This run demonstrated failure handling,
+not successful article coverage for that topic; earlier standalone successes
+do not guarantee availability in the Worker.
 
 ## Goal
 
@@ -41,6 +62,20 @@ before we build persisted topic management.
   availability, and freshness problems; no fixed number of stories is guaranteed.
 
 ## Following increments
+
+The Bing-only warning described below is superseded by concrete local date
+filtering: all three engines are queried, then returned dates are filtered
+before result capping. Last day is 24 hours, month 31 days, year 365 days.
+The live Last day UI returned three eligible AI leads with all three engines
+represented, and displayed exact boundaries plus excluded/undated counts.
+
+Follow-up diagnosis: installed DuckDuckGo News and Brave News do not support
+time filters. SearXNG skips them when `time_range` is set, leaving Bing as the
+only eligible engine. Matched Worker requests confirmed Last day = ten
+Bing-only leads; Any time = ten mixed-engine leads. The UI now explicitly warns
+about this change. Before briefing generation, evaluate searching all engines
+without provider time filters and enforcing freshness from reliable publication
+dates, with an explicit policy for undated leads. Never silently widen a filter.
 
 **Topic management:** responsive app shell and persisted topic add/edit/pause/delete
 using Agent-owned SQLite migrations. Global schedule/reading defaults remain

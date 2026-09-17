@@ -6,15 +6,15 @@ agreed design; **proposed default** means a reviewable choice not yet shipped.
 
 ## 1. Implementation status
 
-| Area                                              | Current status                                                               |
-| ------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Natural-language parsing and preference proposals | Not implemented                                                              |
-| SQLite preferences, conversations, and memory     | Not implemented                                                              |
-| Google News RSS and GDELT discovery               | Worker providers with fixture tests; recent live GDELT requests returned 429 |
-| SearXNG                                           | Local container and verification script; no Worker provider                  |
-| Publisher evidence                                | Bounded Worker HTML extraction and separate local paragraph experiment       |
-| Description/snippet preservation and fallback     | Not implemented                                                              |
-| Ranking, grouping, briefing generation, chat      | Not implemented                                                              |
+| Area                                              | Current status                                                                   |
+| ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Natural-language parsing and preference proposals | Not implemented                                                                  |
+| SQLite preferences, conversations, and memory     | Not implemented                                                                  |
+| Google News RSS and GDELT discovery               | Worker providers with fixture tests; recent live GDELT requests returned 429     |
+| SearXNG                                           | Local container, bounded Worker provider, and responsive inspection screen       |
+| Publisher evidence                                | Bounded Worker HTML extraction and separate local paragraph experiment           |
+| Description/snippet preservation and fallback     | SearXNG provenance and inspection qualification implemented; composition planned |
+| Ranking, grouping, briefing generation, chat      | Not implemented                                                                  |
 
 The feasibility endpoint returns diagnostics, not briefings. No application
 preferences, stories, evidence, or conversations are currently persisted.
@@ -209,8 +209,14 @@ retention are open decisions rather than silently indefinite storage.
 | `sourceUrl`   | Google redirect link or GDELT publisher link          |
 | `discovery`   | `google-news` or `gdelt`                              |
 
-There is no description, query attribution, date provenance, language,
-resolved publisher URL, or semantic group ID. Exact URL deduplication does not
+SearXNG additionally preserves optional `description` (text, kind, provider,
+observation time), `engines`, and `dateProvenance`. Shared runtime schemas live
+in `src/shared/inspection.ts`; discovery reexports the types. Search responses
+also retain query, observation time, and selected time range. The provider enum
+includes `searxng`; its source URL is a direct publisher lead and publication
+date is parsed search metadata or null. Google/GDELT contracts remain compatible.
+There is no language, separate resolved publisher URL, or semantic group ID
+on candidates yet; evidence returns its own final article URL. Exact URL deduplication does not
 group independent coverage of the same event.
 
 ### Google News RSS — current
@@ -245,13 +251,14 @@ null. The adapter preserves no description. When one is absent, there is no
 description fallback to create. Recent isolated live requests returned 429
 despite long intervals; five-second spacing does not guarantee acceptance.
 
-### SearXNG — local experiment only
+### SearXNG — current local Worker integration
 
-The JSON API supplies URLs, titles, content snippets, engine attribution, and
-sometimes dates. The local script uses title/URL for publisher retrieval and
-reports unresponsive engines. It does not normalize Worker candidates or save
-snippets. A future provider must validate records and preserve snippet origin,
-engine failures, and optional dates with provenance.
+The Worker validates JSON results, sanitizes titles/snippets, rejects invalid
+URLs, deduplicates exact URLs while merging engines, and preserves engine
+failures. It uses news category, English, a 15-second timeout, streamed 750 KB
+bound, and at most 15 candidates. Optional time filters are passed to engines;
+they do not guarantee freshness. Missing/invalid dates stay null. Search never
+automatically fetches article evidence. The local UI explicitly requests it.
 
 Local evidence was available across all three topics, but searches included
 old, blocked, and JavaScript-only results. An empty engine-error list does not
@@ -275,19 +282,20 @@ into a fictional single article.
 
 ### Current Worker
 
-`src/server/evidence.ts` fetches GDELT links directly after URL checks. Google
+`src/server/evidence.ts` fetches direct publisher links independently of provider after URL checks. Google
 links first require a publisher redirect; another Google link returns
 unavailable. Publisher fetching follows at most five redirects, validates
 each destination, and has a 10-second timeout.
 
-Require successful HTML, limit HTML to 500 KB, strip script/style/noscript and
-tags, decode a small set of entities, and require 400 text characters. Return
+Require successful HTML, stream-limit HTML to 500 KB, prefer an article block
+or substantial paragraphs within main/document, sanitize entities/tags, reject
+recognized challenge titles, and require 400 text characters. Return
 at most 12,000 characters, final URL, truncation, and `publisher-page`
 provenance, or an unavailable reason.
 
-Without content length, the current reader buffers before checking actual
-size; it needs a streamed bound. Some body-read errors can still throw. URL
-safety checks need broader reserved-address and IPv6 coverage.
+Body-read errors return unavailable. Results include page title and extraction
+method. Literal private/reserved IPv4, IPv6, credentials, and local hostnames
+are rejected; DNS-aware host policy remains pending. This is local-only inspection.
 
 `usable` currently means a mechanical text threshold passed. It does not prove
 article-body quality, completeness, trustworthiness, freshness, or support for
@@ -299,7 +307,8 @@ every follow-up. Navigation and consent text may pass the same threshold.
 `<article>` block, otherwise scan substantial `<p>` text and print a sample for
 manual review. It has streamed size bounds, bounded redirects, and a 15-second
 article timeout. Its successful experiment is not proof of an implemented
-SearXNG Worker integration or identical extraction there.
+extraction quality across publishers. The Worker now uses a similar bounded
+heuristic, with its own fixture tests.
 
 ### Planned stronger quality gate
 
@@ -317,7 +326,11 @@ never change preferences, request secrets, or trigger unrelated tools.
 
 When stronger article evidence cannot be obtained within budget and there are
 not enough stronger relevant stories, use a qualified concise description as a
-clearly attributed limited item. This policy is not implemented yet.
+clearly attributed limited item. Inspection implements tier qualification:
+at least 80 characters, 12 words, and three distinct words beyond the title,
+with common navigation/consent text rejected. This heuristic is not proof of
+relevance or factual support. Briefing selection, exclusions, freshness policy,
+fallback caps, and composition remain planned.
 
 | Tier          | Material                                                                       | Allowed output                                                                |
 | ------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -400,6 +413,21 @@ interface tests and a separate live quality evaluation must both cover it.
 
 ## 9. Improvement backlog
 
+**DISC-06 — Planned provider-side date filters:** retain current Worker-side
+filtering by user decision. Verify supported upstream news parameters with
+scripts before adding custom SearXNG adapters or an official API. Acceptance:
+outgoing filters and returned dates are tested per engine, unsupported ranges
+are explicit, and coverage/freshness gains are measured. See the maintained
+[implementation plan](implementation-plan.md).
+
+Date-filter follow-up: local SearXNG now always queries all three engines
+without native time filters, then filters normalized dates against inclusive
+UTC ranges (24 hours / 31 days / 365 days) before applying the result cap.
+Unknown/invalid and future dates are excluded only in filtered searches.
+Diagnostics expose exact boundaries and exclusions. DISC-03 remains partial:
+search dates are unverified and filtering cannot recover recent leads missing
+from the returned candidate set.
+
 Update this table with each related increment. Close items only against their
 acceptance criteria. Priorities suggest sequencing; proceed one reviewed
 increment at a time.
@@ -409,15 +437,15 @@ increment at a time.
 | PREF-01   | Preference phase     | Planned         | Validated schema and proposal/Apply flow          | Ambiguity stays unapplied; unrelated fields preserved; stale revisions rejected; rejection changes nothing                                   |
 | PREF-03   | Before topic prompts | Planned         | Independent persisted topic add/edit/pause/delete | Add preserves existing topics; edit affects selected topic only; paused topics excluded from future run snapshots; one global reading budget |
 | PREF-02   | Preference phase     | Planned         | SQLite migrations and persistence                 | Reload/restart preserve preferences, schedule/timezone, and topic overrides                                                                  |
-| DISC-01   | High                 | Planned         | SearXNG Worker provider                           | Separate file; normalized links and attributed snippets; partial engine errors; local Worker integration passes                              |
-| DISC-02   | High                 | Planned         | Description/provenance fields                     | Informative snippets preserved; headline-only RSS descriptions rejected; absent stays absent                                                 |
+| DISC-01   | High                 | Completed       | SearXNG Worker provider                           | Separate file; normalized links and attributed snippets; partial engine errors; local Worker integration passes                              |
+| DISC-02   | High                 | Partial         | Description/provenance fields                     | Informative snippets preserved; headline-only RSS descriptions rejected; absent stays absent                                                 |
 | DISC-03   | High                 | Planned         | Freshness and query quality                       | Old geopolitics filtered; indexing never treated as publication; undated policy reviewed                                                     |
 | DISC-04   | Medium               | Planned         | Throttling and provider failover                  | 429 cannot monopolize run; concurrent calls respect budget; failures retained                                                                |
 | DISC-05   | Medium               | Planned         | Robust RSS/entity parsing                         | CDATA, numeric entities, malformed XML, and empty feeds handled explicitly                                                                   |
-| EVID-01   | High                 | Planned         | Readable-body and challenge detection             | Navigation/consent fails; checked publisher fixtures extract matching article body                                                           |
-| EVID-02   | High                 | Planned         | Stream Worker bounds and contain read failures    | Oversized chunked responses stop early; broken streams return unavailable                                                                    |
-| EVID-03   | High                 | Planned         | Reserved-address/redirect hardening               | IPv4/IPv6 and credentials tested; DNS/host policy documented for Worker runtime                                                              |
-| EVID-04   | High                 | Planned         | Description fallback                              | Strong same-story evidence wins; excluded/old/title-only stories rejected; labels/caps/grounded chat hold                                    |
+| EVID-01   | High                 | Partial         | Readable-body and challenge detection             | Navigation/consent fails; checked publisher fixtures extract matching article body                                                           |
+| EVID-02   | High                 | Completed       | Stream Worker bounds and contain read failures    | Oversized chunked responses stop early; broken streams return unavailable                                                                    |
+| EVID-03   | High                 | Partial         | Reserved-address/redirect hardening               | IPv4/IPv6 and credentials tested; DNS/host policy documented for Worker runtime                                                              |
+| EVID-04   | High                 | Partial         | Description fallback                              | Strong same-story evidence wins; excluded/old/title-only stories rejected; labels/caps/grounded chat hold                                    |
 | EVID-05   | Later                | Deferred        | JavaScript rendering and evidence refresh         | Quality gain measured against cost; no paywall bypass; provenance retained                                                                   |
 | BRIEF-01  | Briefing phase       | Planned         | Semantic groups and substantial updates           | Duplicate publishers grouped; repeats suppressed; updates explain supported facts                                                            |
 | BRIEF-02  | Briefing phase       | Planned         | Workflow atomic publication                       | Stable snapshots; retries/concurrent launches cannot duplicate; total failure preserves prior date                                           |
@@ -427,7 +455,18 @@ increment at a time.
 | EVAL-01   | High                 | Planned         | Fixtures plus live evaluation                     | Three-topic relevance/freshness/evidence rates recorded, including failures and fallback grounding                                           |
 | COST-01   | Before production    | Planned         | Usage and configurable budgets                    | Provider/model/retrieval usage visible; estimates based on measured daily workload                                                           |
 
-Completed foundations are separate Google/GDELT files, fixture-tested
-discovery and direct retrieval, local pinned SearXNG, and live paragraph
-verification. These do not close the pending integration, freshness,
-persistence, or fallback items above.
+### Integration progress against backlog
+
+- DISC-01 and EVID-02: completed with Worker integration and interface tests.
+- DISC-02: partial; SearXNG snippets/provenance preserved, RSS descriptions pending.
+- EVID-01: partial; article/paragraph heuristic and challenge detection added,
+  but live EWTN extraction still included footer and related text.
+- EVID-03: partial; literal-address guards strengthened, DNS policy pending.
+- EVID-04: partial; inspection qualification and labels implemented, briefing
+  eligibility, alternative coverage, caps, and grounded chat pending.
+- EVAL-01: partial; live search yielded ten candidates for each topic. Checked
+  AI EWTN (3,972 characters) and WFAE (5,471) passed mechanical extraction;
+  AP failed with 403 and Miami Herald timed out. Liverpool evidence results
+  are recorded in the next-iteration report. These samples are not coverage rates.
+
+Freshness, persistence, and briefing fallback remain unresolved.

@@ -6,8 +6,11 @@ cited briefings with grounded follow-up chat.
 
 ## Current status
 
+See the maintained [implementation plan](docs/implementation-plan.md) for
+milestone status, acceptance criteria, retained TODOs, and the next increment.
+
 Increment 1 establishes the deployable React and Worker foundation. The root
-page is intentionally a small placeholder and `GET /api/health` reports the
+page now provides a local content inspection screen and `GET /api/health` reports the
 Worker status. Durable Object persistence, AI, scheduling, and Cloudflare Access
 arrive in later reviewed increments.
 
@@ -22,17 +25,42 @@ guarantee that publishers allow article retrieval.
 
 - Node 24.x
 - npm 11+
+- Docker Desktop running for local SearXNG
 - A Cloudflare account is needed only for deployment
 
 ## Local development
 
 ```sh
 npm ci
+cp .dev.vars.example .dev.vars
+npm run searxng:start
 npm run dev
 ```
 
 Visit the local URL printed by Vite. The app checks the Worker health endpoint
 on load.
+
+Search keywords or use the three topic shortcuts. Inspect source links, search
+descriptions, engine failures, reported dates, and on-demand article text.
+Evidence is labelled article text, description only, or headline only. This is
+a quality inspection tool: it does not interpret natural language, summarize,
+save topics, or persist results yet.
+
+The default time range is **Any time** for inspection. Last-day searches can
+return no results; engines may still supply old or undated leads. Warnings do
+not constitute a publication freshness filter. Extraction can include footer
+and related-story text, so review it before trusting future summaries.
+
+Filtered searches now query all three engines and apply concrete date ranges
+locally: previous 24 hours, 31 days, or 365 days. Undated/future leads are
+excluded; the UI shows range boundaries and excluded counts. Dates come from
+search metadata, and filtering only covers the returned candidate set.
+
+`INSPECTION_ENABLED=true` opts into local diagnostic routes; keep it unset in
+deployment. `.dev.vars` is ignored. SearXNG stays on loopback port 8080. Stop it
+with `npm run searxng:stop` when finished. The evidence endpoint requires a
+same-origin JSON POST; production authentication and DNS-aware outbound
+restrictions remain future work.
 
 ## Quality checks
 
@@ -65,11 +93,11 @@ secrets.
 
 See [the detailed data pipeline and improvement backlog](docs/data-pipeline.md)
 for natural-language parsing, planned storage, current discovery/evidence
-parsing, and the proposed description-only fallback policy.
+parsing, implemented inspection fallback qualification, and planned briefing policy.
 
 Configuration will use independently added topics, with global briefing
 defaults. See [the next iteration plan](docs/next-iteration.md) for local
-SearXNG integration followed by persisted topic management and scoped prompts.
+integration results and following persisted topic management and scoped prompts.
 
 Google News results are discovery leads, not sufficient evidence for detailed
 summaries. The feasibility check confirmed that Google's encoded RSS links do
@@ -79,6 +107,6 @@ The app retains citations, metadata, and summary provenance instead of full
 articles. It must disclose when a chat answer only has a feed excerpt or cannot
 retrieve an article.
 
-Planned extensions include a private SearXNG adapter, stronger readable-content
+Planned extensions include private SearXNG hosting, stronger readable-content
 extraction, source-quality controls, and evidence refreshes for deeper chat.
 They are intentionally not part of the first deployable slice.

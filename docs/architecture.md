@@ -27,7 +27,8 @@ If stronger relevant article results are insufficient, the planned pipeline
 may include informative attributed descriptions as labelled limited items.
 Headline-only results cannot support expanded summaries. Fallback eligibility,
 freshness, provenance, and proposed caps are specified in `data-pipeline.md`;
-the fallback is not yet implemented.
+inspection now qualifies descriptions and exposes evidence tiers. Briefing
+selection, fallback caps, and composition are not yet implemented.
 
 Discovery will first use Google News RSS search. It is behind an adapter seam so
 GDELT can supply a second channel with direct publisher links. Providers live in
@@ -68,4 +69,19 @@ Workers AI model selection is configurable. Each run will cap queries,
 retrievals, model input, output, and retries, and record usage. The target is
 below USD 10–20/month for a single user. Email, push, broad web browsing, and
 remote SearXNG hosting are deferred. Local SearXNG is available for feasibility
-testing; its Worker provider is not yet implemented.
+testing and the local Worker inspection provider.
+
+## Local inspection integration
+
+The React content lab calls `GET /api/inspection/search`, then explicitly
+requests one candidate through `POST /api/inspection/evidence`. Search does
+not automatically fetch publishers. Shared Zod contracts validate both edges.
+The SearXNG provider is a separate file alongside Google News and GDELT.
+Requests, response bytes, candidate counts, and extraction lengths are bounded.
+Partial engine failures remain visible alongside successful results.
+
+Diagnostic routes require `INSPECTION_ENABLED=true` and reject cross-origin
+browser requests; leave them disabled in deployment. These controls are local
+development safeguards, not the planned Cloudflare Access authentication.
+No app data is persisted. DNS-aware destination restrictions and robust
+readable-body extraction are still required before production retrieval.

@@ -153,3 +153,68 @@ natural-language proposals. Added a proposed next iteration for local SearXNG
 Worker integration and attributed description/evidence tiers, followed by
 persisted manual topic management. Prepared the reviewed discovery, local
 SearXNG tooling, and documentation for a local commit; no remote push.
+
+## Local content inspection integration
+
+### Review and commit boundary (2026-09-18)
+
+> Let's work on 3.1 and 3.2
+
+> review the approach first, and commit previous changes
+
+**Outcome:** Paused the new slices and removed their two uncommitted draft
+contract files. Preparing only the preceding local content lab, date filtering,
+and maintained planning changes for commit. Present the 3.1/3.2 approach for
+user review before implementation resumes.
+
+### Maintained milestone plan (2026-09-18)
+
+> Okay, let's keep the filtering on client for now. Mark it as a next item of improvement or todo. After this, what is our next increment action as per the original increment plan.
+>
+> write this plan and update it as we go from now on
+
+The supplied six-milestone table is preserved in `docs/implementation-plan.md`.
+**Outcome:** Retained existing application-side filtering (executed in the
+Worker), added provider-side filtering TODO DISC-06, documented measured
+feasibility limitations, and defined Increment 3A manual persistent topics
+followed by 3B scoped interpretation/proposal/Apply. Added instructions to
+maintain milestone status, evidence, limitations, and update history. No
+Increment 3 implementation started.
+
+### Concrete date ranges (2026-09-18)
+
+> We can simply translate last day, month, t=directly to date ranges and use that. I want that implemented
+
+**Outcome:** Search all news engines without native time filters, then apply
+inclusive UTC ranges to search-reported dates before result capping. Day =
+24 hours, month = 31 days, year = 365 days. Undated/invalid and future dates
+are excluded from filtered searches; Any time remains unchanged. UI exposes
+range boundaries and excluded counts. This filters returned candidates, not
+the engines' complete indexes, and does not verify publisher publication dates.
+
+### Follow-up diagnosis (2026-09-18)
+
+> I only see news from bing and regularly see connection error if i retry soon
+
+> In the UI, when i try i only bing or no results at all when bing fails
+
+**Outcome:** Compared matched Worker searches with Last day and Any time.
+Verified the installed SearXNG processor skips engines without time-filter
+support; DuckDuckGo News and Brave News are skipped, leaving Bing. Logs
+separately show Bing disconnects, not confirmed HTTP 429. Added explicit UI
+eligibility and empty-result guidance without silently widening filters.
+Earlier Any time checks did not cover this distinction.
+
+> I want to start with the basic local running server where i can verify content wuality and improvements, what is the next step to achieve that
+
+> Yes work on this integration
+
+**Outcome (2026-09-18):** Integrated local SearXNG into bounded Worker routes
+and a responsive React content lab. Added validated shared contracts, snippet
+provenance, date warnings, partial engine diagnostics, explicit article retrieval,
+streamed limits, and labelled evidence tiers. No AI summaries or persistence.
+Live checks returned ten leads per initial topic; EWTN/WFAE text was accessible,
+AP and Sports Illustrated returned 403 with description fallback, and Miami
+Herald timed out. Old/undated results and footer contamination remain documented
+quality gaps. Updated setup, architecture, instructions, and backlog. Verification
+includes automated quality checks, local APIs, browser retrieval, and mobile width.

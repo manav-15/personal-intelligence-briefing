@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { healthSchema } from '../shared/health';
+import { Inspection } from './Inspection';
 
 /** Application shell and initial browser-to-Worker connectivity check. */
 export function App() {
@@ -35,25 +36,10 @@ export function App() {
           {connection}
         </span>
       </header>
-      <section aria-labelledby="welcome">
-        <p className="eyebrow">A little perspective, every day</p>
-        <h1 id="welcome">
-          Your interests.
-          <br />A clearer picture.
-        </h1>
-        <p className="intro">
-          A daily briefing for the stories you care about, with context and
-          sources you can explore.
-        </p>
-        <div className="notice">
-          <h2>The foundation is ready.</h2>
-          <p>
-            Briefings, topics, and conversations are coming in the next
-            increments.
-          </p>
-        </div>
-      </section>
-      <footer>Built for a more thoughtful morning.</footer>
+      <Inspection />
+      <footer>
+        Local inspection only. Searches and extracted text are not saved.
+      </footer>
     </main>
   );
 }

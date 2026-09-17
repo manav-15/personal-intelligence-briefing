@@ -30,6 +30,9 @@ Do not add email, push notifications, general-purpose web browsing, or SearXNG
 hosting unless the user explicitly expands scope.
 Local SearXNG feasibility is authorized; remote SearXNG deployment remains
 deferred. Keep the local service bound to loopback and secrets ignored.
+The local content inspection screen and Worker integration are authorized.
+Keep diagnostic routes opt-in through local bindings, disabled in deployment.
+Preserve raw quality diagnostics; inspection warnings are not eligibility filters.
 
 ## Architecture
 
@@ -68,6 +71,10 @@ runtime edge.
 - Do not commit credentials, local Worker state, generated output, or caches.
 - Maintain README deployment/setup guidance, architecture decisions, and
   `PROMPTS.md`.
+- Maintain `docs/implementation-plan.md` as the milestone source of truth.
+  After each increment or scope decision, update status, validation evidence,
+  limitations, next slice, and the update log. Keep application-side date
+  filtering for now; provider-side filtering is TODO DISC-06.
 - Prompt history is required. Before completing every implementation increment,
   append the user request and any material AI coding prompt to `PROMPTS.md`.
   Each entry must state the date, the increment or change it informed, the

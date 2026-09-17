@@ -1,19 +1,15 @@
 import type { Fetcher, StoryCandidate } from './discovery';
+import type { z } from 'zod';
+import type { evidenceSchema } from '../shared/inspection';
+import { plainText } from './content';
+import { readBoundedText } from './http';
 
 const MAX_ARTICLE_BYTES = 500_000;
 const MINIMUM_READABLE_CHARACTERS = 400;
 const MAXIMUM_EVIDENCE_CHARACTERS = 12_000;
 
 /** Evidence that can support a substantive briefing claim. */
-export type EvidenceResult =
-  | {
-      status: 'usable';
-      articleUrl: string;
-      text: string;
-      truncated: boolean;
-      provenance: 'publisher-page';
-    }
-  | { status: 'unavailable'; reason: string };
+export type EvidenceResult = z.infer<typeof evidenceSchema>;
 
 /**
  * Resolves a discovery candidate to its publisher page and extracts bounded
@@ -23,13 +19,24 @@ export async function retrieveEvidence(
   story: StoryCandidate,
   fetcher: Fetcher = fetch,
 ): Promise<EvidenceResult> {
+  try {
+    return await resolveEvidence(story, fetcher);
+  } catch {
+    return unavailable('The article response could not be read.');
+  }
+}
+
+async function resolveEvidence(
+  story: StoryCandidate,
+  fetcher: Fetcher,
+): Promise<EvidenceResult> {
   let sourceUrl: URL;
   try {
     sourceUrl = new URL(story.sourceUrl);
   } catch {
     return unavailable('The publisher link is not safe to fetch.');
   }
-  if (story.discovery === 'gdelt') {
+  if (sourceUrl.hostname !== 'news.google.com') {
     if (!isFetchablePublisherUrl(sourceUrl))
       return unavailable('The publisher link is not safe to fetch.');
     return retrievePublisherEvidence(sourceUrl, fetcher);
@@ -45,6 +52,7 @@ export async function retrieveEvidence(
   }
 
   const location = redirect.headers.get('location');
+  await redirect.body?.cancel();
   if (!location)
     return unavailable('Google News did not provide a publisher link.');
 
@@ -94,18 +102,29 @@ async function retrievePublisherEvidence(
     if (!isFetchablePublisherUrl(articleUrl))
       return unavailable('The publisher link is not safe to fetch.');
   }
-  if (!article.ok)
+  if (!article.ok) {
+    await article.body?.cancel();
     return unavailable(`The publisher returned ${String(article.status)}.`);
+  }
   if (
     !article.headers.get('content-type')?.toLowerCase().includes('text/html')
   ) {
+    await article.body?.cancel();
     return unavailable('The publisher response was not an HTML article.');
   }
 
-  const html = await readText(article, MAX_ARTICLE_BYTES);
-  if (!html.ok)
+  const html = await readBoundedText(article, MAX_ARTICLE_BYTES);
+  if (html === null)
     return unavailable('The publisher page exceeded the size limit.');
-  const text = extractReadableText(html.value);
+  const pageTitle = plainText(
+    /<title[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
+  );
+  if (
+    /just a moment|access denied|captcha|verify you are human/iu.test(pageTitle)
+  ) {
+    return unavailable('The publisher returned a challenge page.');
+  }
+  const { text, extraction } = extractReadableText(html);
   if (text.length < MINIMUM_READABLE_CHARACTERS) {
     return unavailable(
       'The publisher page did not contain enough readable evidence.',
@@ -118,6 +137,8 @@ async function retrievePublisherEvidence(
     text: text.slice(0, MAXIMUM_EVIDENCE_CHARACTERS),
     truncated: text.length > MAXIMUM_EVIDENCE_CHARACTERS,
     provenance: 'publisher-page',
+    pageTitle,
+    extraction,
   };
 }
 
@@ -129,9 +150,29 @@ function isFetchablePublisherUrl(url: URL): boolean {
   if (!['http:', 'https:'].includes(url.protocol)) return false;
   if (url.username || url.password) return false;
   const hostname = url.hostname.toLowerCase();
+  // Conservatively reject literal IPv6 until a complete address policy is introduced.
+  if (hostname.startsWith('[')) return false;
+  if (/^\d+\.\d+\.\d+\.\d+$/u.test(hostname)) {
+    const [first = 0, second = 0] = hostname.split('.').map(Number);
+    if (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      first >= 224 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && [0, 2, 168].includes(second)) ||
+      (first === 198 && [18, 19, 51].includes(second)) ||
+      (first === 203 && second === 0)
+    )
+      return false;
+  }
   return !(
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
     /^127\./.test(hostname) ||
     hostname === '::1' ||
     hostname === '[::1]' ||
@@ -141,36 +182,21 @@ function isFetchablePublisherUrl(url: URL): boolean {
   );
 }
 
-function extractReadableText(html: string): string {
-  return decodeHtml(
-    html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim(),
+function extractReadableText(html: string): {
+  text: string;
+  extraction: 'article-region' | 'paragraphs';
+} {
+  const cleaned = html.replace(
+    /<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1>/giu,
+    '',
   );
-}
-
-function decodeHtml(value: string): string {
-  return value
-    .replaceAll('&nbsp;', ' ')
-    .replaceAll('&amp;', '&')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'");
-}
-
-async function readText(
-  response: Response,
-  maximumBytes: number,
-): Promise<{ ok: true; value: string } | { ok: false }> {
-  const declaredLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes)
-    return { ok: false };
-  const content = await response.arrayBuffer();
-  if (content.byteLength > maximumBytes) return { ok: false };
-  return { ok: true, value: new TextDecoder().decode(content) };
+  const article = /<article\b[^>]*>([\s\S]*?)<\/article>/iu.exec(cleaned)?.[1];
+  if (article !== undefined)
+    return { text: plainText(article), extraction: 'article-region' };
+  const region =
+    /<main\b[^>]*>([\s\S]*?)<\/main>/iu.exec(cleaned)?.[1] ?? cleaned;
+  const paragraphs = [...region.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/giu)]
+    .map((match) => plainText(match[1] ?? ''))
+    .filter((text) => text.length >= 80);
+  return { text: paragraphs.join('\n\n'), extraction: 'paragraphs' };
 }

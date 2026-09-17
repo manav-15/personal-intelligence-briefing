@@ -1,15 +1,8 @@
 /** Supported discovery providers; each implementation lives in its own file. */
-export type DiscoveryProvider = 'google-news' | 'gdelt';
+export type DiscoveryProvider = 'google-news' | 'gdelt' | 'searxng';
 
 /** A normalized lead; a source link alone does not establish article evidence. */
-export type StoryCandidate = {
-  id: string;
-  title: string;
-  publisher: string | null;
-  publishedAt: string | null;
-  sourceUrl: string;
-  discovery: DiscoveryProvider;
-};
+export type { StoryCandidate, DiscoveryResult } from '../../shared/inspection';
 
 /** Recoverable provider failures allow collection to produce incomplete briefings. */
 export type DiscoveryFailure = {
@@ -20,14 +13,9 @@ export type DiscoveryFailure = {
     | 'provider-fetch-failed'
     | 'provider-rate-limited'
     | 'response-too-large'
-    | 'invalid-response';
+    | 'invalid-response'
+    | 'provider-engine-failed';
   message: string;
-};
-
-/** Bounded normalized leads and explicit collection failures. */
-export type DiscoveryResult = {
-  stories: StoryCandidate[];
-  failures: DiscoveryFailure[];
 };
 
 /** Fetch boundary shared by the Worker and deterministic provider fixtures. */

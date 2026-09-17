@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { healthSchema } from '../shared/health';
 import { discoverGdelt, discoverGoogleNews } from './discovery';
 import { retrieveEvidence } from './evidence';
+import { handleInspection, type InspectionEnv } from './inspection';
 
 /**
  * Worker HTTP entrypoint. Static Assets serve the application; this handler
@@ -9,8 +10,10 @@ import { retrieveEvidence } from './evidence';
  */
 export default {
   /** Returns the versioned health contract or a JSON error for unsupported routes. */
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: InspectionEnv = {}): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/inspection/'))
+      return handleInspection(request, env);
 
     if (url.pathname === '/api/health') {
       if (request.method !== 'GET') {
@@ -39,7 +42,7 @@ export default {
 
     return Response.json({ error: 'Not found' }, { status: 404 });
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<InspectionEnv>;
 
 async function runDiscoveryFeasibility(url: URL): Promise<Response> {
   const query = url.searchParams.get('q') ?? 'artificial intelligence';
