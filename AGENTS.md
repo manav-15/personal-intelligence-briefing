@@ -14,6 +14,11 @@ chat.
   weak topic section.
 - Resurface only substantial updates and explain what changed.
 - Users review and explicitly apply proposed preference changes.
+- Configure topics independently: add/edit/pause/delete topics without
+  replacing other topics. Keep schedule and total reading budget global;
+  topic summary/source settings inherit defaults and may override them.
+  Introduce manual topic management before topic-specific natural-language
+  interpretation; an all-in-one briefing prompt is optional future work.
 - Summary style, depth, audience, and emphasis are user-controlled through
   natural-language prompts. Topic preferences may override global preferences.
 - Publish an explicitly incomplete briefing on partial collection failure. On a
@@ -23,6 +28,8 @@ chat.
 
 Do not add email, push notifications, general-purpose web browsing, or SearXNG
 hosting unless the user explicitly expands scope.
+Local SearXNG feasibility is authorized; remote SearXNG deployment remains
+deferred. Keep the local service bound to loopback and secrets ignored.
 
 ## Architecture
 
@@ -31,9 +38,16 @@ personal Agent owns preferences, chat, briefing history, covered stories, and
 run state in Durable Object SQLite. A Workflow owns briefing generation.
 
 Use Google News RSS as the first discovery provider behind a replaceable
-adapter. Discovery links are not enough evidence for detailed summaries: use
+adapter, with GDELT as a second channel. Keep providers in separate files under
+`src/server/discovery`, sharing normalized contracts through its entrypoint.
+Discovery links are not enough evidence for detailed summaries: use
 bounded article retrieval, store citations/metadata/provenance rather than full
 article copies, and disclose unavailable evidence in chat.
+Allow informative attributed descriptions as a labelled, limited fallback when
+stronger relevant results are unavailable within budget. Never expand headline-only
+metadata into substantive claims or bypass exclusions/freshness to fill slots.
+Follow the status distinctions and maintain the backlog in `docs/data-pipeline.md`
+when changing preferences, storage, discovery, evidence, or fallback behavior.
 
 Keep modules deep with small interfaces. Use an adapter only when there are two
 real implementations. Avoid generic repositories, DI frameworks, plugin
@@ -46,6 +60,8 @@ runtime edge.
   diff and validation, then wait for user review before the next increment.
 - Preserve the single `npm run check` gate: format, lint, typecheck, tests, and
   production build must pass before requesting review.
+- Verify changes locally: start the frontend/Worker and check the page and
+  affected API routes in addition to automated checks.
 - Use strict TypeScript. Add concise JSDoc comments to public entrypoints,
   exported functions, methods, classes, schemas, and types.
 - Pin dependencies and retain `package-lock.json`. Target Node 24.x.

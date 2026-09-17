@@ -44,5 +44,20 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: {
+        AbortSignal: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+      },
+    },
+  },
   prettier,
 );

@@ -1,0 +1,32 @@
+# Local-only, private instance. No Valkey is needed with the limiter disabled.
+use_default_settings:
+  engines:
+    keep_only:
+      - bing news
+      - duckduckgo news
+      - brave.news
+      # The news engine shares this engine's network configuration.
+      - brave
+
+engines:
+  - name: brave
+    disabled: true
+
+general:
+  instance_name: Personal Briefing Local Search
+
+search:
+  formats:
+    - html
+    - json
+  default_lang: en
+  autocomplete: ''
+
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 10.0

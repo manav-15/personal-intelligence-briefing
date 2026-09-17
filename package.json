@@ -16,6 +16,11 @@
     "typecheck": "tsc -p tsconfig.web.json && tsc -p tsconfig.server.json && tsc -p tsconfig.tools.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:google-links": "node scripts/verify-google-news-link.mjs",
+    "verify:search-links": "node scripts/verify-search-sources.mjs",
+    "searxng:start": "node scripts/start-searxng.mjs",
+    "searxng:stop": "docker compose -f infra/searxng/compose.yml down",
+    "verify:searxng-evidence": "node scripts/verify-searxng-evidence.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

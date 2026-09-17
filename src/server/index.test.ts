@@ -3,8 +3,16 @@ import { healthSchema } from '../shared/health';
 import worker from './index';
 
 describe('Worker HTTP interface', () => {
+  it('rejects unknown discovery providers before making external requests', async () => {
+    const response = await worker.fetch(
+      new Request(
+        'https://briefing.test/api/feasibility/discovery?provider=unknown',
+      ),
+    );
+    expect(response.status).toBe(400);
+  });
   it('returns the shared health contract without caching', async () => {
-    const response = worker.fetch(
+    const response = await worker.fetch(
       new Request('https://briefing.test/api/health'),
     );
 
@@ -13,8 +21,8 @@ describe('Worker HTTP interface', () => {
     expect(healthSchema.parse(await response.json())).toEqual({ status: 'ok' });
   });
 
-  it('rejects unsupported methods', () => {
-    const response = worker.fetch(
+  it('rejects unsupported methods', async () => {
+    const response = await worker.fetch(
       new Request('https://briefing.test/api/health', { method: 'POST' }),
     );
 
@@ -23,7 +31,7 @@ describe('Worker HTTP interface', () => {
   });
 
   it('returns a JSON 404 for unknown API routes', async () => {
-    const response = worker.fetch(
+    const response = await worker.fetch(
       new Request('https://briefing.test/api/missing'),
     );
 

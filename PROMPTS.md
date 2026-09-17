@@ -63,3 +63,93 @@ repository instructions. Verified the local frontend and Worker health route.
 **Outcome (2026-09-17):** Added repository instructions for the agreed product,
 architecture, engineering rules, public-entrypoint documentation, and mandatory
 prompt-history recording.
+
+## Implementation prompt: increment 2
+
+> Go ahead.
+
+**Outcome (2026-09-17):** Added a bounded Google News RSS discovery module,
+deterministic feed/evidence tests, and a local feasibility endpoint. Live runs
+returned three candidates each for AI, geopolitics, and Liverpool, but none
+yielded publisher evidence because Google RSS item links require a separate
+undocumented publisher-link decoder. The code now reports that limitation
+explicitly rather than treating Google pages as article evidence.
+
+## Research-tooling prompt: publisher-link verification
+
+> without implementing the server code, can you write basic scripts to verify
+> and determine what is needed to get full article link from a google RSS feed
+>
+> - keep calling links till we get the final one we need. Also, try other search
+>   engines which might be free and see how can we use them. For each source, I
+>   want verified logic/steps to get the article link that we need
+
+**Outcome (2026-09-17):** Added standalone Node scripts and a decision record.
+The Google experiment resolved a live RSS item to its canonical Economist URL
+through Google's undocumented page-parameter and `batchexecute` sequence; the
+publisher returned HTTP 403. GDELT previously returned direct publisher URLs
+but later returned HTTP 429 during repeat probes. The tested public SearXNG
+instance returned HTML browser verification instead of JSON. No Worker or
+application server code was changed for this research task.
+
+## Implementation prompt: GDELT discovery channel
+
+> Let's implement another discovery channel for GDELT - keep the providers in a
+> package as separate files maybe for readability.
+
+**Outcome (2026-09-17):** Added the bounded GDELT provider and organized discovery
+into a directory with separate provider files and shared contracts. The local
+feasibility route selects either provider; evidence retrieval accepts GDELT's
+direct publisher links. Added interface-level fixtures for normalization,
+language filtering, deduplication, limits, malformed output, and rate limits.
+Validation passed the full quality gate with 25 tests. The rendered local
+frontend showed Connected, health returned HTTP 200, and invalid providers
+returned HTTP 400. The live GDELT route reported HTTP 429 as a recoverable
+rate-limit failure; successful live coverage remains unverified for this run.
+
+## Implementation prompt: minimal local SearXNG
+
+> Okay let's work on a minimal local searXNG setup - for first iteration, let's
+> start with running it locally. Validate that we are able to get the evidence
+
+**Outcome (2026-09-18):** Added pinned, localhost-only Compose configuration,
+generated ignored secrets, readiness checking, and a bounded standalone
+evidence verifier. Live searches returned direct publisher links for all three
+topics. Five of twelve distinct checked publisher URLs yielded manually
+inspected article paragraphs. Other URLs returned 403, JavaScript-only HTML,
+or excessive response size; Bing News failed upstream. Documented measured
+coverage and outstanding freshness/extraction limitations. No SearXNG Worker
+provider or external deployment was added.
+The final default verifier passed for all three topics using Miami Herald,
+WFAE, and Sky Sports paragraph samples; Bing News recovered. The full quality
+gate passed with 25 tests, and the local frontend rendered Connected.
+
+## Documentation prompt: pipeline and fallback policy
+
+> Create a detailed doc on how natural lanugage input is parsed, and what is
+> stored, how discovery and evidence is parsed. Keep track of to-dos or
+> improvements or things to work on. We should probably also a fallback when we
+> just have concise description metadata, and use them if we don't have better
+> news results.
+
+**Outcome (2026-09-18):** Added `docs/data-pipeline.md`, separating existing
+code from planned preference interpretation, storage, and briefing flows.
+Documented current Google/GDELT/SearXNG parsing and evidence limitations, a
+description-only fallback policy with proposed caps, and an identified backlog
+with acceptance criteria. Linked it from setup/architecture docs and required
+backlog maintenance in repository instructions. No fallback code was added.
+Validation passed the full quality gate with 25 tests and local frontend/health
+HTTP 200 responses.
+
+## Design and commit prompt: independent topics
+
+> Okay, i would probably like to add topics rather than one single prompt for
+> my daily briefing. This can be incremental and done in the future. update the
+> doc, then commit and give me next iteration plan
+
+**Outcome (2026-09-18):** Updated the design and repository instructions for
+independent topic management, separate global defaults, and future topic-scoped
+natural-language proposals. Added a proposed next iteration for local SearXNG
+Worker integration and attributed description/evidence tiers, followed by
+persisted manual topic management. Prepared the reviewed discovery, local
+SearXNG tooling, and documentation for a local commit; no remote push.
