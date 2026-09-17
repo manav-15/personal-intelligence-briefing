@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { healthSchema } from '../shared/health';
-import { Inspection } from './Inspection';
+import { AppShell } from './Screens';
 
 /** Application shell and initial browser-to-Worker connectivity check. */
 export function App() {
@@ -28,18 +28,5 @@ export function App() {
     };
   }, []);
 
-  return (
-    <main>
-      <header>
-        <span className="wordmark">Personal Briefing</span>
-        <span className="status" role="status">
-          {connection}
-        </span>
-      </header>
-      <Inspection />
-      <footer>
-        Local inspection only. Searches and extracted text are not saved.
-      </footer>
-    </main>
-  );
+  return <AppShell connection={connection} />;
 }

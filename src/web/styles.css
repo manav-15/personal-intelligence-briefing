@@ -25,6 +25,29 @@ header {
   padding-bottom: 24px;
   border-bottom: 1px solid #d6dbd0;
 }
+nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+  border-bottom: 1px solid #d6dbd0;
+}
+nav a {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+nav a[aria-current='page'] {
+  background: #203b36;
+  color: #fffef9;
+}
+.planned-screen {
+  min-height: 420px;
+}
+.planned-screen .notice {
+  max-width: 640px;
+}
 .wordmark {
   font-weight: 700;
   letter-spacing: -0.025em;

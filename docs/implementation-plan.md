@@ -10,7 +10,7 @@ milestone complete when only a smaller slice is delivered.
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
-| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Next; not started                                              |
+| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | 3.1–3.2 in review                                              |
 | **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | Planned                                                        |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
@@ -49,19 +49,52 @@ increment indefinitely.
 
 ## Increment 3: small reviewable slices
 
-1. **3A — App shell and manual persistent topics.** Add Today, Chat, Topics,
-   Archive, and Memory/Settings navigation. Keep the content lab reachable.
-   Introduce one singleton Agent with Durable Object SQLite and versioned SQL
-   migrations. Add validated topic add/edit/pause/delete and global schedule,
-   reading budget, summary/source defaults. Topic overrides inherit global
-   values. Unimplemented screens explicitly show their status.
-2. **3B — Topic-scoped interpretation.** Use configurable Workers AI to propose
-   structured topic changes, search concepts, and summary style. Show a
-   before/after proposal; persist only after explicit Apply. Reject stale
-   revisions and prevent topic requests from silently changing global settings.
+### 3.1–3.2 completed
 
-Review 3A before starting 3B. Do not introduce briefing generation, scheduling,
-or grounded chat during these slices.
+Added strict shared schemas for global and topic preferences, source/summary
+inheritance, provider-neutral search concepts, and future topic proposals. The
+contract module resolves effective values while preserving global exclusions and
+blocked sources. It intentionally does not persist data or call a model.
+
+Added responsive routes for Today, Chat, Topics, Archive, Memory & settings,
+and Content lab. Only the content lab is functional; every other screen makes
+its deferred state explicit. Direct routing, navigation, and active-page state
+are implemented. Persistence remains 3.3 and manual management 3.4.
+
+See [preference contracts](preferences-contracts.md) for inheritance, proposal,
+future model evaluation, and relevance decisions.
+
+### 3.3 — Persistence foundation: next, awaiting implementation authorization
+
+Introduce one singleton Agent backed by Durable Object SQLite and explicit,
+versioned SQL migrations. Implement a small preference module interface:
+`readPreferences()` returns the current validated document or first-run state;
+`replacePreferences(document, expectedRevision)` validates, compares revision,
+writes atomically, and returns the advanced document. Do not add topic forms,
+proposal application, model calls, briefing generation, schedules, or chat.
+
+The browser gets a read-only route/API diagnostic only if needed to verify the
+actual persisted document. The Topics and Settings screens remain deferred
+until 3.4. Keep SQL and migration details behind the preference module seam;
+tests use its interface rather than duplicating queries.
+
+### 3.3 validation
+
+- A fresh Durable Object creates the versioned schema and returns first-run
+  state without inventing saved preferences.
+- A valid replacement survives a new Agent instance / Durable Object restart.
+- Invalid documents and revision conflicts leave the stored document unchanged.
+- Migration is idempotent and upgrades the known empty database exactly once.
+- Browser/API verification confirms the local Worker reaches the singleton
+  Agent; the content lab and all routes remain available.
+- `npm run check` and deterministic Worker integration tests pass.
+
+### After 3.3
+
+**3.4 manual topic management** will add Topics and Settings forms over this
+interface: add/edit/pause/delete topics, global defaults, and validation. It
+will not include the model proposal flow. **3.5** evaluates interpretation
+models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
 
 ### 3A validation
 
@@ -86,3 +119,7 @@ or grounded chat during these slices.
 - **2026-09-18:** Consolidated original milestones and current feasibility
   evidence. Retained application-side date filtering by user decision; added
   DISC-06. Next implementation slice is 3A, followed by review and 3B.
+- **2026-09-18:** Completed 3.1–3.2: validated shared preference/proposal
+  contracts, decision record, responsive shell, direct routes, active navigation,
+  and preserved content lab. `npm run check` passed with 53 tests; local Topics
+  and Content lab routes were verified. Next is 3.3 persistence foundation.

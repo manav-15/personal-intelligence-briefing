@@ -158,6 +158,25 @@ SearXNG tooling, and documentation for a local commit; no remote push.
 
 ### Review and commit boundary (2026-09-18)
 
+### 3.1 and 3.2 authorization (2026-09-18)
+
+> lgtm - let's start implementing 3.1 and 3.2
+
+**Outcome:** Added strict, shared preference/proposal contracts with fixtures
+and a responsive routed shell for Today, Chat, Topics, Archive, Memory &
+settings, and the existing content lab. No preferences are stored; no model,
+Agent, Durable Object, topic controls, briefing generation, or chat was added.
+
+### 3.1–3.2 review and next plan (2026-09-18)
+
+> looks alright. commit and give me next plan
+
+**Outcome:** Marked 3.1–3.2 complete after review and defined 3.3 as a
+standalone Durable Object SQLite persistence foundation. It has one small
+preference-module interface, migrations, revision conflicts, and restart
+validation; forms, model work, schedules, and briefing generation remain out
+of scope until later reviewed slices.
+
 > Let's work on 3.1 and 3.2
 
 > review the approach first, and commit previous changes
