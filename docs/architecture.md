@@ -82,6 +82,25 @@ is not a publication timestamp, so publication time remains unknown. Publisher
 names currently use the destination hostname. Source-quality ranking and
 configurable language/lookback are deferred.
 
+## Run-scoped collection foundation (2026-09-19)
+
+When a briefing run starts, the Agent snapshots the validated preferences and
+fixed collection limits. Collection considers enabled topics only, compiles a
+topic's search concepts (or its interests when concepts are absent), then uses
+a configured SearXNG pass followed by bounded Google News and GDELT fallbacks
+per query. It applies literal exclusion and blocked-publisher checks, exact
+source-URL deduplication, and retains every matching topic ID. It does not make
+semantic relevance or source-quality judgments.
+
+The run may retain bounded retrieved article text in `briefing_candidates` only
+while it is active. This allows the later composition/Workflow work to retry or
+compose from the same evidence without making it permanent application memory.
+The Agent deletes those rows when it publishes a briefing. Provider and evidence
+failures are retained with the active run so the later UI can explain a partial
+result. Current default limits are 12 discovery calls, 8 results per call, 36
+deduplicated candidates, and 12 evidence fetches. Retry budget is explicitly
+zero until the Workflow supplies bounded backoff in 4.4.
+
 ## Discovery feasibility result
 
 Google News RSS returned candidates for the initial AI, world-news, and
@@ -106,9 +125,32 @@ deleted; duplicate-detection data expires after 90 days.
 
 Workers AI model selection is configurable. Each run will cap queries,
 retrievals, model input, output, and retries, and record usage. The target is
-below USD 10–20/month for a single user. Email, push, broad web browsing, and
-remote SearXNG hosting are deferred. Local SearXNG is available for feasibility
-testing and the local Worker inspection provider.
+below USD 10–20/month for a single user. Email, push, and broad web browsing are
+deferred.
+
+## Private SearXNG Container (2026-09-19)
+
+SearXNG runs as one private Cloudflare Container, managed by its own Durable
+Object binding (`SEARXNG`). The Worker resolves the stable `briefing-search`
+instance through `getContainer` and forwards only internal `/search` requests
+to port 8080; Cloudflare does not publish a route to the SearXNG process. It
+sleeps after ten idle minutes and enables outbound internet access because its
+configured engines must contact upstream search services. The Worker collection
+budget bounds that use. Durable Object-managed Container sizing is currently
+platform-controlled, so the initial deployment must measure its actual usage.
+
+`SEARXNG_SECRET` is a Cloudflare Worker secret and is injected only when the
+container starts. It is never committed. The container image copies the same
+pinned SearXNG image and `settings.yml` used by loopback-only local Compose,
+which keeps local content-quality checks representative of the deployed search
+configuration. Container disk/cache is not application memory; durable app
+state continues to live in the personal Agent's SQLite database.
+
+The provider is now available to bounded collection as the first channel when
+this binding is supplied by the later generation Workflow. Google News RSS and
+GDELT remain bounded fallbacks. A fair scheduler is still required so one topic
+or provider cannot consume the complete run budget; see
+[DISC-07](data-pipeline.md#9-improvement-backlog).
 
 ## Local inspection integration
 

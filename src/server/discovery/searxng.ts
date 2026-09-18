@@ -50,7 +50,7 @@ export async function discoverSearxng(
   } catch {
     return failed(
       'provider-fetch-failed',
-      'Local SearXNG could not be reached. Run npm run searxng:start.',
+      'Configured SearXNG could not be reached.',
     );
   }
 

@@ -13,7 +13,7 @@ engines:
     disabled: true
 
 general:
-  instance_name: Personal Briefing Local Search
+  instance_name: Personal Briefing Search
 
 search:
   formats:

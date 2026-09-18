@@ -26,10 +26,12 @@ chat.
 - Keep briefings and conversations until deleted; delete deduplication memory
   after 90 days.
 
-Do not add email, push notifications, general-purpose web browsing, or SearXNG
-hosting unless the user explicitly expands scope.
-Local SearXNG feasibility is authorized; remote SearXNG deployment remains
-deferred. Keep the local service bound to loopback and secrets ignored.
+Do not add email, push notifications, or general-purpose web browsing unless
+the user explicitly expands scope. Use a private Cloudflare Container for the
+production SearXNG process and keep the local Docker service on the same pinned
+image and settings. The Worker is its only caller: never expose a public
+SearXNG route, and store `SEARXNG_SECRET` only as an ignored local value or a
+Cloudflare secret. Deployment remains a separately reviewed action.
 The local content inspection screen and Worker integration are authorized.
 Keep diagnostic routes opt-in through local bindings, disabled in deployment.
 Preserve raw quality diagnostics; inspection warnings are not eligibility filters.
@@ -73,8 +75,13 @@ runtime edge.
   `PROMPTS.md`.
 - Maintain `docs/implementation-plan.md` as the milestone source of truth.
   After each increment or scope decision, update status, validation evidence,
-  limitations, next slice, and the update log. Keep application-side date
-  filtering for now; provider-side filtering is TODO DISC-06.
+  limitations, next slice, and the update log.
+- `docs/data-pipeline.md` is the **only** actionable TODO/backlog location.
+  Every open improvement, limitation requiring work, deferred decision, or
+  follow-up must have one ID and status in its Improvement backlog table.
+  Other documents may link to backlog IDs but must not create a second TODO
+  list. Keep application-side date filtering for now; its tracked follow-up is
+  DISC-06.
 - Prompt history is required. Before completing every implementation increment,
   append the user request and any material AI coding prompt to `PROMPTS.md`.
   Each entry must state the date, the increment or change it informed, the
@@ -93,6 +100,10 @@ runtime edge.
   substantial.
 - Use Prettier for standard formatting and ESLint's padding-line rules for
   semantic spacing. Run their auto-fix commands before committing.
+- ESLint limits cyclomatic complexity to 35, block nesting to 3 levels, nested
+  callbacks to 4 levels, and statements per function to 50. Extract a named
+  helper before raising a limit; adjust a limit only after documenting why the
+  current codebase cannot meet it.
 
 ## Cost target
 

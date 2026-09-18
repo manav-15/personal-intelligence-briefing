@@ -34,11 +34,8 @@ JavaScript: query all three news engines, filter returned search-reported dates
 against inclusive rolling UTC ranges, then cap results. Day = 24 hours,
 month = 31 days, year = 365 days. Filtered searches exclude undated/future leads.
 
-**TODO DISC-06:** evaluate provider-side time filtering with standalone scripts;
-verify each source honors transmitted parameters before changing adapters.
-Record supported/unsupported filters, test outgoing requests and returned dates,
-and compare freshness/coverage with current filtering. Custom adapters or an
-official API require a separate reviewed change. Current filtering can miss
+The provider-side time-filter follow-up is tracked as
+[DISC-06](data-pipeline.md#9-improvement-backlog). Current filtering can miss
 recent articles absent from the engines' returned candidates.
 
 Robust article extraction (footer contamination), verified publication dates,
@@ -195,7 +192,7 @@ read-only local Today/Archive routes and screens. The routes remain behind the
 existing local diagnostics binding and return no-store JSON. No collection,
 retrieval, model call, Workflow, or Generate action is included.
 
-### 4.2 — Bounded collection and evidence selection
+### 4.2 — Bounded collection and evidence selection: implemented, awaiting review
 
 Snapshot enabled effective topics from the preference revision, invoke the
 existing discovery/evidence adapters under explicit query, result, byte, and
@@ -203,13 +200,89 @@ retry budgets, then normalize exact URL duplicates. Persist only run-scoped
 candidate metadata and evidence provenance required for retry and composition.
 Report partial provider/evidence failures. No semantic ranking or summaries.
 
+Delivered: each run snapshots the complete validated preferences document and
+fixed collection budget. A collection module compiles enabled topics into
+provider-neutral queries, makes a configured private SearXNG pass followed by
+bounded Google News and GDELT fallback passes, applies exact source-URL
+deduplication with topic attribution, applies literal exclusions and
+blocked-publisher checks, and retrieves bounded evidence for a capped candidate
+set. Provider exceptions become attributable partial failures, so other
+providers and queries continue. Temporary evidence and collection failures
+persist only while the run is active; publication or failure removes evidence
+rows. SearXNG configuration is a
+single private Cloudflare Container with no public route; its Worker binding
+will be supplied by the later generation Workflow. Its Durable Object-managed
+container sizing is platform-controlled and will be measured on first deploy.
+
+The 12-query, 8-results-per-query, 36-candidate, and 12-evidence-fetch limits
+are snapshot defaults. Provider retry is explicitly zero until Workflow retry
+and backoff behavior is introduced in 4.4. The result contains no relevance
+ranking, source preference ranking, semantic exclusion matching, freshness
+policy, summary, model call, or user-facing generation route.
+
+The fair per-topic/provider scheduler is tracked as
+[DISC-07](data-pipeline.md#9-improvement-backlog).
+
+Validation: deterministic collection fixtures cover deduplication, multi-topic
+attribution, article evidence, and query budgets. An in-memory SQLite Agent test
+covers migration 5, snapshots, temporary collection persistence, and deletion
+after publication. `npm run check` passed with 122 tests. A local persisted
+Durable Object upgraded to versions 1–5; `briefing_runs` now has
+`collection_snapshot` and `collection_failures`, and Today still returned its
+empty state without modifying saved preferences.
+
 ### 4.3 — Grounded manual composition
 
-Use Llama 3.3 70B with bounded selected evidence to classify relevance, group
-related stories, identify substantial updates against coverage memory, and
-produce a structured cited briefing. Code validates every cited source ID,
-exclusion, topic scope, length budget, and evidence tier before publication.
-Description fallback remains labelled and cannot support unsupported detail.
+Implement 4.3.1–4.3.3 as one reviewed increment: a deep composition module
+that accepts a run snapshot, bounded temporary evidence, and seven days of
+compact prior published coverage, then returns a validated in-memory briefing draft or a structured
+composition failure. It owns candidate packing, prompt construction, strict
+model-output validation, source/citation materialization, and limits; callers
+do not assemble prompts or trust model-provided links.
+
+The Llama 3.3 70B call receives normalized topic intent (`userWording`,
+interests, exclusions, effective summary/source settings), candidate IDs,
+metadata, evidence tier/text, collection limitations, and compact seven-day prior
+coverage. It does not receive secrets, raw provider errors, or an authority to
+choose URLs. The model returns selected candidate IDs, a presentation topic,
+headline, summary, update references, `whatChanged`, and a relevance assessment
+with a short reason. The assessment has bounded `topicFit` (0–5),
+`briefingValue` (0–3), and `novelty` (0–2) fields. Code calculates the 0–100
+score as `topicFit * 10 + briefingValue * 10 + novelty * 10`; the model does
+not supply an opaque aggregate. Code also derives citations, publishers, topic
+IDs, publication dates, and completeness from the selected candidates.
+
+The prompt defines relevance bands rather than asking for an unexplained score:
+0–24 unrelated/excluded; 25–49 tangential or weak; 50–69 relevant but weak,
+duplicate, or insufficiently material; 70–84 clear fit; and 85–100 high-priority,
+well-supported material or a substantial update. It requires the assessment
+reason to cite the supplied topic intent, evidence, competing candidates, and
+prior coverage. The calculated score ranks eligible items and supports
+evaluation; it never overrides code-enforced exclusions, evidence tiers,
+source/citation integrity, or output budgets. Article evidence may support
+grounded claims; description evidence may support only a labelled limited item;
+headline-only evidence is not selectable.
+
+Prior coverage is additionally capped at 12 items, selected by active-topic
+intersection and recency, with each prior headline/summary limited to 500
+characters. The model request also caps current evidence at 2,500 characters
+per candidate and 36,000 evidence/prior-coverage characters in total. One
+composition call is permitted per run. These are deterministic cost controls,
+not application-side usage telemetry: neuron usage remains monitored in the
+Cloudflare Workers AI dashboard. EVAL-01 records request/output sizes and the
+dashboard-observed usage for its manual runs before any cap changes.
+
+Deterministic tests use a fake model to cover strict prompt payloads, bounded
+packing, malicious text treated as data, malformed/dangling/duplicate candidate
+IDs, evidence-tier restrictions, topic-profile conflicts, citation construction,
+length limits, partial limitations, and prior-update references. A separate
+live EVAL-01 run across AI, world news, and Liverpool records grounding,
+citation integrity, relevance calibration, style adherence, and supported
+updates. CI never calls Workers AI or publishes a briefing.
+
+This increment deliberately stops before a public Generate action, Workflow,
+retry behavior, or database publication; those remain 4.4. Description fallback
+remains labelled and cannot support unsupported detail.
 
 ### 4.4 — Generate-now Workflow and Today/Archive
 
@@ -333,3 +406,18 @@ partial collection failures. Scheduling remains Increment 6.
 - **2026-09-19:** Corrected fresh database initialization: it now creates the
   current `preferences.user_id` schema directly. Migration 2 still upgrades an
   existing version-1 singleton database to the temporary `single-user` key.
+- **2026-09-19:** Implemented 4.2, awaiting review: run snapshots, bounded
+  Google News/GDELT collection, exact URL deduplication, topic attribution,
+  bounded evidence retrieval, temporary run-scoped evidence storage, and
+  persisted partial failures. No semantic selection, model composition,
+  Workflow, or manual launch route was added.
+- **2026-09-19:** Added enforced ESLint complexity ceilings. The initial limits
+  match the highest pre-existing complexity while blocking regressions; the new
+  collection loop was split into helpers to meet the three-level nesting limit.
+- **2026-09-19:** Expanded 4.2 by decision: configured SearXNG is first in
+  collection when available, with Google News and GDELT as fallbacks. Added a
+  private, one-instance Cloudflare Container configuration using the local
+  pinned image/settings; deployment and fair scheduling remain separate work.
+- **2026-09-19:** Hardened 4.2 collection review findings: provider exceptions
+  now become bounded partial failures, and failing a run deletes its temporary
+  candidate evidence in the same SQLite transaction.

@@ -15,9 +15,28 @@
   "durable_objects": {
     "bindings": [
       { "name": "PERSONAL_BRIEFING", "class_name": "PersonalBriefingAgent" },
+      { "name": "SEARXNG", "class_name": "SearxngContainer" },
     ],
   },
+  "containers": [
+    {
+      "name": "searxng",
+      "class_name": "SearxngContainer",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "default": {
+          "dockerfile": "./infra/searxng/Dockerfile",
+          "build_context": "./infra/searxng",
+        },
+      },
+    },
+  ],
   "exports": {
     "PersonalBriefingAgent": { "type": "durable-object", "storage": "sqlite" },
+    "SearxngContainer": {
+      "type": "durable-object",
+      "storage": "sqlite",
+      "container": "searxng",
+    },
   },
 }

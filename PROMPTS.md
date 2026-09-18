@@ -471,3 +471,90 @@ Generate action was added; those remain separate 4.2–4.4 slices for review.
 queries and inserts use `user_id`. Removed the obsolete singleton-table create
 then migrate sequence from fresh initialization; migration 2 retains the legacy
 upgrade only when it encounters an existing version-1 database.
+
+### Bounded collection and evidence selection (2026-09-19)
+
+> looks good. commit and move to 4.2
+
+**Outcome:** Committed 4.1 as `9017f48`. Implemented 4.2: immutable run
+snapshots, bounded Google News/GDELT collection, exact URL deduplication with
+topic attribution, literal exclusions and blocked-source checks, bounded
+evidence retrieval, partial-failure retention, and temporary active-run
+evidence storage. No semantic ranking, LLM call, Workflow, or Generate route
+was added.
+
+### Complexity and nesting enforcement (2026-09-19)
+
+> cn we implement cyclomatic compllexity checks on code to limit complexity and nestedness
+
+**Outcome:** Added built-in ESLint limits for cyclomatic complexity, block
+nesting, nested callbacks, and statements per function. Refactored the new
+collection loop into small helpers to meet the nesting rule. These checks run
+through the existing auto-fixing lint and `npm run check` commands.
+
+### Fair provider scheduling and SearXNG priority (2026-09-19)
+
+> Max query size is checked over all topics, queries, providers. One noisy provider or query can exhuast the quota. what are the options to mitigate them
+
+> Keep this as a to do. Why we did not implement for searXNG as that is our now go to news provider
+
+**Outcome:** Added DISC-07. It will reserve coverage for every enabled topic,
+cap each provider, and use a shared round-robin remainder so an early provider
+or query cannot monopolize collection. Documented SearXNG as the preferred
+local collection provider for that work; remote SearXNG hosting remains
+deferred.
+
+### Private Cloudflare Container SearXNG discovery (2026-09-19)
+
+> Okay, cool document that we will use searXNG as a cloudflare container. Imlpement the discovery for searXNG as well
+
+**Outcome:** Declared a single private, Durable Object-managed `lite` SearXNG
+Cloudflare Container with no public route, injected `SEARXNG_SECRET` at runtime,
+and kept the pinned local Docker image/settings as its build source. Added a
+Container-to-fetch adapter and made configured SearXNG the first bounded
+collection provider, followed by Google News and GDELT fallbacks. Added fixture
+coverage for provider ordering and updated deployment, architecture, pipeline,
+and plan documentation. No Cloudflare deployment was performed.
+
+### Single actionable TODO backlog (2026-09-19)
+
+> make sure all todos are tracked in a single location and then update agents.md to make the location explicit.
+
+**Outcome:** Made `docs/data-pipeline.md` the sole actionable backlog. Added
+missing IDs for provider-side time filtering, Cloudflare Access, and scheduling;
+replaced duplicate `TODO` text with links to those IDs; marked historical plans
+as non-authoritative; and added the rule to `AGENTS.md`.
+
+### Collection exception and failed-run cleanup (2026-09-19)
+
+> Two issues worth fixing in the implemented collection foundation:
+>
+> - [Collection (line 182)](/Users/manav/sideHustles/cloudflare-assignment/src/server/briefing-collection.ts:182) lets provider exceptions abort the entire run. Valid preferences can generate queries beyond provider limits; contain these failures and preserve successful results.
+> - [Failed runs (line 475)](/Users/manav/sideHustles/cloudflare-assignment/src/server/preferences-agent.ts:475) retain temporary article evidence indefinitely. Clean it up when marking a run failed, as publication already does.
+
+**Outcome:** Provider exceptions now become bounded, attributable discovery
+failures while fallback providers and later queries continue. Failing a run now
+transitions its status and deletes temporary candidate evidence in one SQLite
+transaction. Regression tests cover both behaviors.
+
+### Grounded composition scope and relevance rubric (2026-09-19)
+
+> we can do upto 4.3.3 in one increment. how will the LLM decide the score - we do not pass or share any information about that
+
+**Outcome:** Scoped one reviewed 4.3 increment through deterministic packing,
+one constrained composition call, and mechanical briefing materialization. The
+planned prompt now supplies topic intent, evidence, competing candidates, prior
+coverage, and explicit relevance bands. The model returns bounded topic-fit,
+briefing-value, and novelty assessments; code calculates the auditable ranking
+score, which never substitutes for code-enforced grounding rules.
+
+### Prior-coverage window and model-cost controls (2026-09-19)
+
+> Prior coverage from the last 90 days - will that be too much content? it hink 5-7 days is enough, and we need to monitor usage as well
+
+**Outcome:** Reduced planned composition context to seven days, at most 12
+compact prior items and 6,000 prior-coverage characters. Current evidence is
+capped at 2,500 characters per candidate and 36,000 context characters in
+total, with one composition call per run. The Cloudflare Workers AI dashboard
+remains the usage monitor; EVAL-01 will record request/output sizes and
+dashboard-observed usage without adding application telemetry.

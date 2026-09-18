@@ -7,6 +7,7 @@ import { preferencesRoutes } from './routes/preferences';
 import { allowMethods, noStore, type HttpEnv } from './routes/policy';
 
 export { PersonalBriefingAgent } from './preferences-agent';
+export { SearxngContainer } from './searxng-container';
 
 /** Worker API composition; Static Assets owns frontend routing. */
 const app = new Hono<HttpEnv>();

@@ -13,16 +13,25 @@ import {
   type BriefingArchiveEntry,
 } from '../shared/briefings';
 import {
+  briefingCollectionResultSchema,
+  briefingCollectionSnapshotSchema,
+  defaultBriefingCollectionBudget,
+  type BriefingCollectionResult,
+  type BriefingCollectionSnapshot,
+} from './briefing-collection';
+import {
   buildTopicProposalInput,
   parseTopicProposalResponse,
   topicProposalModel,
   type StoredTopicProposal,
 } from './topic-proposals';
+import type { SearxngContainer } from './searxng-container';
 
 /** Bindings used by the singleton preferences Agent. */
 export type PreferencesAgentEnv = {
   AI?: Ai;
   PERSONAL_BRIEFING: DurableObjectNamespace<PersonalBriefingAgent>;
+  SEARXNG: DurableObjectNamespace<SearxngContainer>;
   PREFERENCES_DIAGNOSTICS_ENABLED?: string;
 };
 
@@ -254,6 +263,12 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
         error: 'Preferences changed before this briefing run could start.',
       };
     }
+    const snapshot = briefingCollectionSnapshotSchema.parse({
+      runId: run.runId,
+      preferenceRevision: run.preferenceRevision,
+      preferences: preferences.preferences,
+      budget: defaultBriefingCollectionBudget,
+    });
 
     return this.ctx.storage.transactionSync(() => {
       const existing = [
@@ -269,13 +284,128 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
           : { ok: false, error: 'Briefing run ID is already in use.' };
 
       this.ctx.storage.sql.exec(
-        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, created_at) VALUES (?, ?, ?, 'running', datetime('now'))`,
+        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at) VALUES (?, ?, ?, 'running', ?, datetime('now'))`,
         run.runId,
         userId,
         run.preferenceRevision,
+        JSON.stringify(snapshot),
       );
 
       return { ok: true, created: true };
+    });
+  }
+
+  /** Reads the immutable preferences and budgets captured when an active run started. */
+  readBriefingCollectionSnapshot(
+    runId: string,
+    userId: UserId,
+  ): BriefingCollectionSnapshot | undefined {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const row = [
+      ...this.ctx.storage.sql.exec<{ collection_snapshot: string | null }>(
+        `SELECT collection_snapshot FROM briefing_runs WHERE id = ? AND user_id = ? AND status = 'running'`,
+        runId,
+        userId,
+      ),
+    ][0];
+
+    if (row?.collection_snapshot === null || row === undefined)
+      return undefined;
+
+    return briefingCollectionSnapshotSchema.parse(
+      JSON.parse(row.collection_snapshot) as unknown,
+    );
+  }
+
+  /** Replaces temporary candidate evidence and partial-failure details for one active run. */
+  storeBriefingCollection(
+    runId: string,
+    value: unknown,
+    userId: UserId,
+  ): boolean {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const collection = briefingCollectionResultSchema.parse(value);
+
+    return this.ctx.storage.transactionSync(() => {
+      const run = [
+        ...this.ctx.storage.sql.exec<{ collection_snapshot: string | null }>(
+          `SELECT collection_snapshot FROM briefing_runs WHERE id = ? AND user_id = ? AND status = 'running'`,
+          runId,
+          userId,
+        ),
+      ][0];
+
+      if (run?.collection_snapshot === null || run === undefined) return false;
+
+      this.ctx.storage.sql.exec(
+        `DELETE FROM briefing_candidates WHERE run_id = ?`,
+        runId,
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE briefing_runs SET collection_failures = ? WHERE id = ?`,
+        JSON.stringify(collection.failures),
+        runId,
+      );
+
+      for (const candidate of collection.candidates) {
+        this.ctx.storage.sql.exec(
+          `INSERT INTO briefing_candidates (run_id, source_url, topic_ids, story, evidence, evidence_tier, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          runId,
+          candidate.story.sourceUrl,
+          JSON.stringify(candidate.topicIds),
+          JSON.stringify(candidate.story),
+          JSON.stringify(candidate.evidence),
+          candidate.evidenceTier,
+        );
+      }
+
+      return true;
+    });
+  }
+
+  /** Reads temporary evidence and partial collection failures while the run remains active. */
+  readBriefingCollection(
+    runId: string,
+    userId: UserId,
+  ): BriefingCollectionResult | undefined {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const run = [
+      ...this.ctx.storage.sql.exec<{ collection_failures: string | null }>(
+        `SELECT collection_failures FROM briefing_runs WHERE id = ? AND user_id = ? AND status = 'running'`,
+        runId,
+        userId,
+      ),
+    ][0];
+
+    if (run?.collection_failures === null || run === undefined)
+      return undefined;
+
+    const candidates = [
+      ...this.ctx.storage.sql.exec<{
+        topic_ids: string;
+        story: string;
+        evidence: string;
+        evidence_tier: 'article' | 'description' | 'headline-only';
+      }>(
+        `SELECT candidate.topic_ids, candidate.story, candidate.evidence, candidate.evidence_tier FROM briefing_candidates AS candidate INNER JOIN briefing_runs AS run ON run.id = candidate.run_id WHERE candidate.run_id = ? AND run.user_id = ? AND run.status = 'running' ORDER BY candidate.created_at ASC`,
+        runId,
+        userId,
+      ),
+    ].map((row) =>
+      briefingCollectionResultSchema.shape.candidates.element.parse({
+        topicIds: JSON.parse(row.topic_ids) as unknown,
+        story: JSON.parse(row.story) as unknown,
+        evidence: JSON.parse(row.evidence) as unknown,
+        evidenceTier: row.evidence_tier,
+      }),
+    );
+
+    return briefingCollectionResultSchema.parse({
+      candidates,
+      failures: JSON.parse(run.collection_failures) as unknown,
     });
   }
 
@@ -327,6 +457,10 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
         JSON.stringify(briefing),
       );
       this.ctx.storage.sql.exec(
+        `DELETE FROM briefing_candidates WHERE run_id = ?`,
+        briefing.runId,
+      );
+      this.ctx.storage.sql.exec(
         `UPDATE briefing_runs SET status = 'published', published_at = ? WHERE id = ? AND user_id = ?`,
         briefing.publishedAt,
         briefing.runId,
@@ -337,16 +471,26 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     });
   }
 
-  /** Marks an active run failed without affecting an already published briefing. */
+  /** Marks an active run failed and removes its temporary evidence. */
   failBriefingRun(runId: string, userId: UserId): boolean {
     this.ensureSchema();
-    const result = this.ctx.storage.sql.exec(
-      `UPDATE briefing_runs SET status = 'failed' WHERE id = ? AND user_id = ? AND status = 'running'`,
-      runId,
-      userId,
-    );
 
-    return result.rowsWritten === 1;
+    return this.ctx.storage.transactionSync(() => {
+      const result = this.ctx.storage.sql.exec(
+        `UPDATE briefing_runs SET status = 'failed' WHERE id = ? AND user_id = ? AND status = 'running'`,
+        runId,
+        userId,
+      );
+
+      if (result.rowsWritten !== 1) return false;
+
+      this.ctx.storage.sql.exec(
+        `DELETE FROM briefing_candidates WHERE run_id = ?`,
+        runId,
+      );
+
+      return true;
+    });
   }
 
   /** Returns the newest dated published briefing for Today. */
@@ -552,18 +696,33 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
         );
       }
 
-      if (hasMigration(4)) return;
+      if (!hasMigration(4)) {
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE briefing_runs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, preference_revision INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('running', 'published', 'failed')), created_at TEXT NOT NULL, published_at TEXT)`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE briefings (run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, date TEXT NOT NULL, published_at TEXT NOT NULL, document TEXT NOT NULL, FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE INDEX briefings_latest_by_user ON briefings (user_id, date DESC, published_at DESC)`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (4, datetime('now'))`,
+        );
+      }
+
+      if (hasMigration(5)) return;
       this.ctx.storage.sql.exec(
-        `CREATE TABLE briefing_runs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, preference_revision INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('running', 'published', 'failed')), created_at TEXT NOT NULL, published_at TEXT)`,
+        `ALTER TABLE briefing_runs ADD COLUMN collection_snapshot TEXT`,
       );
       this.ctx.storage.sql.exec(
-        `CREATE TABLE briefings (run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, date TEXT NOT NULL, published_at TEXT NOT NULL, document TEXT NOT NULL, FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
+        `ALTER TABLE briefing_runs ADD COLUMN collection_failures TEXT`,
       );
       this.ctx.storage.sql.exec(
-        `CREATE INDEX briefings_latest_by_user ON briefings (user_id, date DESC, published_at DESC)`,
+        `CREATE TABLE briefing_candidates (run_id TEXT NOT NULL, source_url TEXT NOT NULL, topic_ids TEXT NOT NULL, story TEXT NOT NULL, evidence TEXT NOT NULL, evidence_tier TEXT NOT NULL CHECK (evidence_tier IN ('article', 'description', 'headline-only')), created_at TEXT NOT NULL, PRIMARY KEY (run_id, source_url), FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
       );
       this.ctx.storage.sql.exec(
-        `INSERT INTO schema_migrations (version, applied_at) VALUES (4, datetime('now'))`,
+        `INSERT INTO schema_migrations (version, applied_at) VALUES (5, datetime('now'))`,
       );
     });
   }

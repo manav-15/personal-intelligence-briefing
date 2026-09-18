@@ -28,6 +28,10 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
+      complexity: ['error', 35],
+      'max-depth': ['error', 3],
+      'max-nested-callbacks': ['error', 4],
+      'max-statements': ['error', 50],
       'no-multiple-empty-lines': ['error', { max: 1, maxBOF: 0, maxEOF: 0 }],
       'padding-line-between-statements': [
         'error',

@@ -7,7 +7,9 @@ cited briefings with grounded follow-up chat.
 ## Current status
 
 See the maintained [implementation plan](docs/implementation-plan.md) for
-milestone status, acceptance criteria, retained TODOs, and the next increment.
+milestone status and acceptance criteria, and the
+[single improvement backlog](docs/data-pipeline.md#9-improvement-backlog) for
+all open follow-ups.
 
 The app now has a singleton `PersonalBriefingAgent` backed by Durable Object
 SQLite. It stores one versioned preferences document, pending/applied/discarded
@@ -156,9 +158,20 @@ endpoint without changing Worker code or local application data.
 ## Deployment
 
 Deployment is deliberately deferred until the Agent, Durable Object, Workflow,
-and Access bindings exist. The intended command is `npx wrangler deploy`; the
-final setup guide will document the required bindings, Access policy, and
-secrets.
+and Access bindings exist. The Worker configuration already declares a private
+SearXNG Cloudflare Container: one Durable Object-managed instance using the
+same pinned image and settings as local Docker. It has no public route; the
+Worker reaches it through its `SEARXNG` binding. Before the first deployment,
+set its runtime secret without putting it in source control:
+
+```sh
+npx wrangler secret put SEARXNG_SECRET
+```
+
+The intended deployment command is `npx wrangler deploy`; the final setup guide
+will document Access, Workflow, and remaining production bindings. `npm run dev`
+does not deploy cloud resources. Local Docker remains the supported way to
+inspect search and article evidence.
 
 ## Evidence limitations and planned improvements
 
@@ -178,6 +191,6 @@ The app retains citations, metadata, and summary provenance instead of full
 articles. It must disclose when a chat answer only has a feed excerpt or cannot
 retrieve an article.
 
-Planned extensions include private SearXNG hosting, stronger readable-content
-extraction, source-quality controls, and evidence refreshes for deeper chat.
-They are intentionally not part of the first deployable slice.
+Open work, including stronger readable-content extraction, source-quality
+controls, fair provider scheduling, and evidence refreshes for deeper chat, is
+tracked in the [improvement backlog](docs/data-pipeline.md#9-improvement-backlog).

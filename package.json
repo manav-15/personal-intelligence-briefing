@@ -24,6 +24,7 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "@cloudflare/containers": "0.3.7",
     "agents": "0.17.0",
     "hono": "4.13.8",
     "react": "19.3.0",
