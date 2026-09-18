@@ -6,6 +6,13 @@ import {
   type Preferences,
 } from '../shared/preferences';
 import {
+  briefingArchiveEntrySchema,
+  briefingRunInputSchema,
+  briefingSchema,
+  type Briefing,
+  type BriefingArchiveEntry,
+} from '../shared/briefings';
+import {
   buildTopicProposalInput,
   parseTopicProposalResponse,
   topicProposalModel,
@@ -37,6 +44,15 @@ export type TopicProposalCreateResult =
 export type TopicProposalActionResult =
   | { ok: true; preferences?: Preferences }
   | { ok: false; error: string; currentRevision?: number };
+
+/** Outcome of recording an idempotent manual briefing run snapshot. */
+export type BriefingRunStartResult =
+  { ok: true; created: boolean } | { ok: false; error: string };
+
+/** Outcome of atomically publishing an already composed briefing. */
+export type BriefingPublishResult =
+  | { ok: true; briefing: Briefing; idempotent: boolean }
+  | { ok: false; error: string };
 
 /** Stable owner key supplied at the Worker edge; Access `sub` will replace the local placeholder. */
 export type UserId = string;
@@ -220,6 +236,163 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     return { ok: true };
   }
 
+  /** Records one manual run against its preference revision without beginning collection. */
+  startBriefingRun(input: unknown, userId: UserId): BriefingRunStartResult {
+    this.ensureSchema();
+    const run = briefingRunInputSchema.parse(input);
+    const preferences = this.readStoredPreferences(userId);
+
+    if (!preferences.configured)
+      return {
+        ok: false,
+        error: 'Save preferences before starting a briefing.',
+      };
+
+    if (preferences.preferences.revision !== run.preferenceRevision) {
+      return {
+        ok: false,
+        error: 'Preferences changed before this briefing run could start.',
+      };
+    }
+
+    return this.ctx.storage.transactionSync(() => {
+      const existing = [
+        ...this.ctx.storage.sql.exec<{ user_id: string }>(
+          `SELECT user_id FROM briefing_runs WHERE id = ?`,
+          run.runId,
+        ),
+      ][0];
+
+      if (existing !== undefined)
+        return existing.user_id === userId
+          ? { ok: true, created: false }
+          : { ok: false, error: 'Briefing run ID is already in use.' };
+
+      this.ctx.storage.sql.exec(
+        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, created_at) VALUES (?, ?, ?, 'running', datetime('now'))`,
+        run.runId,
+        userId,
+        run.preferenceRevision,
+      );
+
+      return { ok: true, created: true };
+    });
+  }
+
+  /** Atomically stores a completed briefing only for its active matching run. */
+  publishBriefing(value: unknown, userId: UserId): BriefingPublishResult {
+    this.ensureSchema();
+    const briefing = briefingSchema.parse(value);
+
+    return this.ctx.storage.transactionSync(() => {
+      const run = [
+        ...this.ctx.storage.sql.exec<{
+          user_id: string;
+          preference_revision: number;
+          status: 'running' | 'published' | 'failed';
+        }>(
+          `SELECT user_id, preference_revision, status FROM briefing_runs WHERE id = ?`,
+          briefing.runId,
+        ),
+      ][0];
+
+      if (run === undefined || run.user_id !== userId)
+        return { ok: false, error: 'Briefing run is not available.' };
+
+      if (run.preference_revision !== briefing.preferenceRevision) {
+        return {
+          ok: false,
+          error: 'Briefing does not match its run snapshot.',
+        };
+      }
+
+      if (run.status === 'published') {
+        const existing = this.readBriefingByRun(briefing.runId, userId);
+
+        if (existing === undefined)
+          return { ok: false, error: 'Published briefing is unavailable.' };
+
+        return { ok: true, briefing: existing, idempotent: true };
+      }
+
+      if (run.status !== 'running')
+        return { ok: false, error: 'Briefing run cannot be published.' };
+
+      this.ctx.storage.sql.exec(
+        `INSERT INTO briefings (run_id, user_id, date, published_at, document) VALUES (?, ?, ?, ?, ?)`,
+        briefing.runId,
+        userId,
+        briefing.date,
+        briefing.publishedAt,
+        JSON.stringify(briefing),
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE briefing_runs SET status = 'published', published_at = ? WHERE id = ? AND user_id = ?`,
+        briefing.publishedAt,
+        briefing.runId,
+        userId,
+      );
+
+      return { ok: true, briefing, idempotent: false };
+    });
+  }
+
+  /** Marks an active run failed without affecting an already published briefing. */
+  failBriefingRun(runId: string, userId: UserId): boolean {
+    this.ensureSchema();
+    const result = this.ctx.storage.sql.exec(
+      `UPDATE briefing_runs SET status = 'failed' WHERE id = ? AND user_id = ? AND status = 'running'`,
+      runId,
+      userId,
+    );
+
+    return result.rowsWritten === 1;
+  }
+
+  /** Returns the newest dated published briefing for Today. */
+  readLatestBriefing(userId: UserId): Briefing | undefined {
+    this.ensureSchema();
+    const row = [
+      ...this.ctx.storage.sql.exec<{ document: string }>(
+        `SELECT document FROM briefings WHERE user_id = ? ORDER BY date DESC, published_at DESC LIMIT 1`,
+        userId,
+      ),
+    ][0];
+
+    if (row === undefined) return undefined;
+
+    return briefingSchema.parse(JSON.parse(row.document) as unknown);
+  }
+
+  /** Lists newest-first archive metadata without loading briefing item documents. */
+  listBriefingArchive(userId: UserId): BriefingArchiveEntry[] {
+    this.ensureSchema();
+
+    return [
+      ...this.ctx.storage.sql.exec<{
+        run_id: string;
+        date: string;
+        published_at: string;
+        document: string;
+      }>(
+        `SELECT run_id, date, published_at, document FROM briefings WHERE user_id = ? ORDER BY date DESC, published_at DESC`,
+        userId,
+      ),
+    ].map((row) => {
+      const briefing = briefingSchema.parse(
+        JSON.parse(row.document) as unknown,
+      );
+
+      return briefingArchiveEntrySchema.parse({
+        runId: row.run_id,
+        date: row.date,
+        completeness: briefing.completeness,
+        itemCount: briefing.items.length,
+        publishedAt: row.published_at,
+      });
+    });
+  }
+
   /** Reads the stored row after schema initialization without triggering another migration check. */
   private readStoredPreferences(userId: UserId): StoredPreferences {
     const row = [
@@ -234,6 +407,24 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
       configured: true,
       preferences: preferencesSchema.parse(JSON.parse(row.document) as unknown),
     };
+  }
+
+  /** Reads one stored briefing only inside an already-open storage transaction. */
+  private readBriefingByRun(
+    runId: string,
+    userId: UserId,
+  ): Briefing | undefined {
+    const row = [
+      ...this.ctx.storage.sql.exec<{ document: string }>(
+        `SELECT document FROM briefings WHERE run_id = ? AND user_id = ?`,
+        runId,
+        userId,
+      ),
+    ][0];
+
+    if (row === undefined) return undefined;
+
+    return briefingSchema.parse(JSON.parse(row.document) as unknown);
   }
 
   /** Stores the already validated proposal payload for later explicit review. */
@@ -327,40 +518,52 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
           ),
         ].length !== 0;
 
-      if (!hasMigration(1)) {
-        this.ctx.storage.sql.exec(
-          `CREATE TABLE preferences (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), revision INTEGER NOT NULL, document TEXT NOT NULL)`,
-        );
-        this.ctx.storage.sql.exec(
-          `INSERT INTO schema_migrations (version, applied_at) VALUES (1, datetime('now'))`,
-        );
-      }
-
       if (!hasMigration(2)) {
-        this.ctx.storage.sql.exec(
-          `ALTER TABLE preferences RENAME TO preferences_v1`,
-        );
-        this.ctx.storage.sql.exec(
-          `CREATE TABLE preferences (user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL)`,
-        );
-        this.ctx.storage.sql.exec(
-          `INSERT INTO preferences (user_id, revision, document) SELECT 'single-user', revision, document FROM preferences_v1 WHERE singleton = 1`,
-        );
-        this.ctx.storage.sql.exec(`DROP TABLE preferences_v1`);
+        if (hasMigration(1)) {
+          this.ctx.storage.sql.exec(
+            `ALTER TABLE preferences RENAME TO preferences_v1`,
+          );
+          this.ctx.storage.sql.exec(
+            `CREATE TABLE preferences (user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL)`,
+          );
+          this.ctx.storage.sql.exec(
+            `INSERT INTO preferences (user_id, revision, document) SELECT 'single-user', revision, document FROM preferences_v1 WHERE singleton = 1`,
+          );
+          this.ctx.storage.sql.exec(`DROP TABLE preferences_v1`);
+        } else {
+          this.ctx.storage.sql.exec(
+            `CREATE TABLE preferences (user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL)`,
+          );
+        }
         this.ctx.storage.sql.exec(
           `INSERT INTO schema_migrations (version, applied_at) VALUES (2, datetime('now'))`,
         );
       }
 
-      if (hasMigration(3)) return;
+      if (!hasMigration(3)) {
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE topic_proposals (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, base_revision INTEGER NOT NULL, proposal TEXT NOT NULL, prompt_version TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'discarded')), created_at TEXT NOT NULL)`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE INDEX topic_proposals_pending_by_user ON topic_proposals (user_id, status, created_at)`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (3, datetime('now'))`,
+        );
+      }
+
+      if (hasMigration(4)) return;
       this.ctx.storage.sql.exec(
-        `CREATE TABLE topic_proposals (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, base_revision INTEGER NOT NULL, proposal TEXT NOT NULL, prompt_version TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'discarded')), created_at TEXT NOT NULL)`,
+        `CREATE TABLE briefing_runs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, preference_revision INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('running', 'published', 'failed')), created_at TEXT NOT NULL, published_at TEXT)`,
       );
       this.ctx.storage.sql.exec(
-        `CREATE INDEX topic_proposals_pending_by_user ON topic_proposals (user_id, status, created_at)`,
+        `CREATE TABLE briefings (run_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, date TEXT NOT NULL, published_at TEXT NOT NULL, document TEXT NOT NULL, FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
       );
       this.ctx.storage.sql.exec(
-        `INSERT INTO schema_migrations (version, applied_at) VALUES (3, datetime('now'))`,
+        `CREATE INDEX briefings_latest_by_user ON briefings (user_id, date DESC, published_at DESC)`,
+      );
+      this.ctx.storage.sql.exec(
+        `INSERT INTO schema_migrations (version, applied_at) VALUES (4, datetime('now'))`,
       );
     });
   }

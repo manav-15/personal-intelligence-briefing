@@ -10,14 +10,17 @@ agreed design; **proposed default** means a reviewable choice not yet shipped.
 | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Natural-language topic proposals              | Llama 3.3 70B proposal/review/Apply flow implemented; one live end-to-end smoke path passed |
 | SQLite preferences and proposals              | Durable Object SQLite preferences and pending/applied/discarded proposal records            |
+| Briefing publication foundation               | Versioned run/publication records and read interfaces; no collection or generated briefing  |
 | Google News RSS and GDELT discovery           | Worker providers with fixture tests; recent live GDELT requests returned 429                |
 | SearXNG                                       | Local container, bounded Worker provider, and responsive inspection screen                  |
 | Publisher evidence                            | Bounded Worker HTML extraction and separate local paragraph experiment                      |
 | Description/snippet preservation and fallback | SearXNG provenance and inspection qualification implemented; composition planned            |
 | Ranking, grouping, briefing generation, chat  | Not implemented                                                                             |
 
-The feasibility endpoint returns diagnostics, not briefings. Preferences and
-topic proposals are persisted; stories, evidence, and conversations are not.
+The feasibility endpoint returns diagnostics, not briefings. Preferences, topic
+proposals, and immutable published briefing payloads are persisted; stories,
+article bodies, temporary evidence, and conversations are not. No code currently
+creates a briefing publication.
 SearXNG's container cache and ignored secret are infrastructure, not app memory.
 
 ## 2. End-to-end design

@@ -3,6 +3,11 @@ import {
   examplePreferences,
   topicProposalRequestSchema,
 } from '../shared/preferences';
+import {
+  briefingSchema,
+  type Briefing,
+  type BriefingArchiveEntry,
+} from '../shared/briefings';
 import app from './index';
 import type { PersonalBriefingAgent } from './preferences-agent';
 
@@ -37,6 +42,33 @@ const applyTopicProposal = vi.fn<
   }
 >(() => ({ ok: true, preferences: examplePreferences }));
 const discardTopicProposal = vi.fn(() => ({ ok: true as const }));
+const readLatestBriefing = vi.fn<() => Briefing | undefined>(() => undefined);
+const listBriefingArchive = vi.fn<() => BriefingArchiveEntry[]>(() => []);
+const exampleBriefing = briefingSchema.parse({
+  schemaVersion: 1,
+  runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+  date: '2026-09-19',
+  preferenceRevision: 3,
+  completeness: 'complete',
+  limitations: [],
+  items: [
+    {
+      id: 'ai-release',
+      topicIds: ['ai'],
+      headline: 'Example model release',
+      summary: 'The example provider released a model.',
+      publishedAt: '2026-09-19T00:00:00.000Z',
+      citations: [
+        {
+          sourceUrl: 'https://example.com/releases/model',
+          publisher: 'Example',
+          evidenceTier: 'article',
+        },
+      ],
+    },
+  ],
+  publishedAt: '2026-09-19T01:00:00.000Z',
+});
 const env = {
   INSPECTION_ENABLED: 'true',
   PREFERENCES_DIAGNOSTICS_ENABLED: 'true',
@@ -49,6 +81,8 @@ const env = {
       createTopicProposal,
       applyTopicProposal,
       discardTopicProposal,
+      readLatestBriefing,
+      listBriefingArchive,
     }),
   } as unknown as DurableObjectNamespace<PersonalBriefingAgent>,
 };
@@ -71,6 +105,8 @@ describe('HTTP policy compatibility', () => {
     ['/api/inspection/search', 'GET', 'no-store'],
     ['/api/inspection/evidence', 'POST', 'no-store'],
     ['/api/feasibility/discovery', 'GET', null],
+    ['/api/briefings/today', 'GET', 'no-store'],
+    ['/api/briefings/archive', 'GET', 'no-store'],
   ] as const;
 
   it.each(routes)(
@@ -115,6 +151,8 @@ describe('HTTP policy compatibility', () => {
     '/api/inspection/missing',
     '/api/inspection/search/',
     '/api/inspection',
+    '/api/briefings',
+    '/api/briefings/today/',
   ])('keeps unknown route %s JSON for every method', async (path) => {
     for (const method of ['GET', 'POST', 'HEAD', 'OPTIONS']) {
       const response = await app.fetch(
@@ -128,7 +166,9 @@ describe('HTTP policy compatibility', () => {
       );
       expect(response.headers.get('Allow')).toBeNull();
       expect(response.headers.get('Cache-Control')).toBe(
-        path.startsWith('/api/inspection/') ? 'no-store' : null,
+        path.startsWith('/api/inspection/') || path.startsWith('/api/briefings')
+          ? 'no-store'
+          : null,
       );
 
       if (method !== 'HEAD')
@@ -142,6 +182,11 @@ describe('HTTP policy compatibility', () => {
       '/api/preferences/proposals',
       'Preference diagnostics are disabled.',
       null,
+    ],
+    [
+      '/api/briefings/today',
+      'Preference diagnostics are disabled.',
+      'no-store',
     ],
     ['/api/inspection/search', 'Local inspection is disabled.', 'no-store'],
     ['/api/inspection/missing', 'Local inspection is disabled.', 'no-store'],
@@ -183,6 +228,7 @@ describe('HTTP policy compatibility', () => {
     '/api/inspection/search',
     '/api/inspection/evidence',
     '/api/inspection/missing',
+    '/api/briefings/today',
   ])('checks origin before method for %s', async (path) => {
     for (const headers of [
       { Origin: 'https://other.test' },
@@ -213,6 +259,52 @@ describe('HTTP policy compatibility', () => {
 
       expect(response.status).toBe(status);
     }
+  });
+
+  it('reads empty and published Today and Archive results', async () => {
+    const emptyToday = await app.fetch(
+      new Request(origin + '/api/briefings/today'),
+      env,
+    );
+    const emptyArchive = await app.fetch(
+      new Request(origin + '/api/briefings/archive'),
+      env,
+    );
+
+    expect(await emptyToday.json()).toEqual({ briefing: null });
+    expect(await emptyArchive.json()).toEqual({ briefings: [] });
+
+    readLatestBriefing.mockReturnValueOnce(exampleBriefing);
+    listBriefingArchive.mockReturnValueOnce([
+      {
+        runId: exampleBriefing.runId,
+        date: exampleBriefing.date,
+        completeness: exampleBriefing.completeness,
+        itemCount: exampleBriefing.items.length,
+        publishedAt: exampleBriefing.publishedAt,
+      },
+    ]);
+    const today = await app.fetch(
+      new Request(origin + '/api/briefings/today'),
+      env,
+    );
+    const archive = await app.fetch(
+      new Request(origin + '/api/briefings/archive'),
+      env,
+    );
+
+    expect(await today.json()).toEqual({ briefing: exampleBriefing });
+    expect(await archive.json()).toEqual({
+      briefings: [
+        {
+          runId: exampleBriefing.runId,
+          date: exampleBriefing.date,
+          completeness: exampleBriefing.completeness,
+          itemCount: exampleBriefing.items.length,
+          publishedAt: exampleBriefing.publishedAt,
+        },
+      ],
+    });
   });
 
   it.each(['null', '[]', '"text"', '42', '{'])(

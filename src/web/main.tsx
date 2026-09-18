@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes } from 'react-router';
 import { App } from './App';
+import { ArchiveScreen, TodayScreen } from './BriefingScreens';
 import { SettingsScreen, TopicsScreen } from './PreferencesScreens';
 import { InspectScreen, PlannedScreen } from './Screens';
 import './styles.css';
@@ -16,15 +17,7 @@ createRoot(root).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />}>
-          <Route
-            index
-            element={
-              <PlannedScreen title="Today">
-                Your first generated briefing will appear here. Manual briefing
-                generation arrives after saved topics and preference proposals.
-              </PlannedScreen>
-            }
-          />
+          <Route index element={<TodayScreen />} />
           <Route
             path="chat"
             element={
@@ -35,15 +28,7 @@ createRoot(root).render(
             }
           />
           <Route path="topics" element={<TopicsScreen />} />
-          <Route
-            path="archive"
-            element={
-              <PlannedScreen title="Archive">
-                Saved briefings will appear here after manual generation is
-                implemented.
-              </PlannedScreen>
-            }
-          />
+          <Route path="archive" element={<ArchiveScreen />} />
           <Route path="settings" element={<SettingsScreen />} />
           <Route path="inspect" element={<InspectScreen />} />
         </Route>

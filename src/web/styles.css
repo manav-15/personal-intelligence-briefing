@@ -361,6 +361,41 @@ footer {
 .preferences-screen {
   max-width: 920px;
 }
+.briefing-screen {
+  max-width: 760px;
+}
+.briefing-items,
+.briefing-archive {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+.briefing-item,
+.briefing-archive li,
+.briefing-limitations {
+  padding: 20px;
+  border: 1px solid #d6dbd0;
+  border-radius: 12px;
+  background: #fffef9;
+}
+.briefing-item h2 {
+  font-size: 1.25rem;
+}
+.briefing-item ul,
+.briefing-limitations ul {
+  margin-bottom: 0;
+}
+.briefing-item span,
+.briefing-archive span {
+  color: #52615b;
+  font-size: 0.9rem;
+}
+.briefing-archive li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
 .preferences-screen > .hint {
   margin: 24px 0;
 }

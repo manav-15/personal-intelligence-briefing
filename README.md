@@ -10,10 +10,13 @@ See the maintained [implementation plan](docs/implementation-plan.md) for
 milestone status, acceptance criteria, retained TODOs, and the next increment.
 
 The app now has a singleton `PersonalBriefingAgent` backed by Durable Object
-SQLite. It stores one versioned preferences document plus pending, applied, and
-discarded topic proposals. The Topics screen can ask Llama 3.3 70B to propose one
-new or edited topic; the user reviews a before/after card and explicitly applies
-or discards it. The local-only `/api/preferences` diagnostic needs
+SQLite. It stores one versioned preferences document, pending/applied/discarded
+topic proposals, and the foundation for immutable briefing publication records.
+Today and Archive currently read those publication records and show an empty
+state until manual briefing generation is added. The Topics screen can ask Llama
+3.3 70B to propose one new or edited topic; the user reviews a before/after card
+and explicitly applies or discards it. The local-only `/api/preferences` and
+`/api/briefings` diagnostics need
 `PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production settings API and
 remains disabled unless explicitly configured.
 
@@ -100,7 +103,7 @@ Visit the local URL printed by Vite. The app checks the Worker health endpoint
 on load.
 
 Hono owns the Worker HTTP layer. `src/server/index.ts` composes health,
-preferences, inspection, and feasibility routes from `src/server/routes/` and
+preferences, briefings, inspection, and feasibility routes from `src/server/routes/` and
 exports the Durable Object class. No additional local service or deployment
 binding is required for Hono. Workers Static Assets still serves the React app;
 `/api` and `/api/*` always reach the Worker and return JSON errors for unknown

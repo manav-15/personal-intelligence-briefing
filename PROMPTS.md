@@ -451,3 +451,23 @@ documentation; historic prompt records remain unchanged.
 four reviewable slices: durable briefing contracts/publication, bounded
 collection and evidence selection, grounded manual composition, then a
 Generate-now Workflow with Today and Archive.
+
+### Manual briefing foundation (2026-09-19)
+
+> let's do 4.1 and 4.2. before that commit current changes
+
+**Outcome:** Committed the accepted topic-proposal work first as `2513e49`.
+Implemented 4.1 only, in accordance with the project’s one-increment review
+gate: strict shared briefing contracts, Agent-owned SQLite run/publication
+records, idempotent publication interfaces, and read-only Today/Archive routes
+and screens. No discovery, evidence retrieval, LLM composition, Workflow, or
+Generate action was added; those remain separate 4.2–4.4 slices for review.
+
+### User-keyed schema audit (2026-09-19)
+
+> checl [preferences-agent.ts](/Users/manav/sideHustles/cloudflare-assignment/src/server/preferences-agent.ts) and insert statements
+
+**Outcome:** Confirmed all active preference, proposal, run, and briefing
+queries and inserts use `user_id`. Removed the obsolete singleton-table create
+then migrate sequence from fresh initialization; migration 2 retains the legacy
+upgrade only when it encounters an existing version-1 database.

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { feasibilityRoutes } from './routes/feasibility';
+import { briefingsRoutes } from './routes/briefings';
 import { healthHandler } from './routes/health';
 import { inspectionRoutes } from './routes/inspection';
 import { preferencesRoutes } from './routes/preferences';
@@ -13,6 +14,7 @@ const app = new Hono<HttpEnv>();
 app.all('/api/health', allowMethods('GET'), noStore);
 app.get('/api/health', healthHandler);
 app.route('/api/preferences', preferencesRoutes);
+app.route('/api/briefings', briefingsRoutes);
 app.route('/api/inspection', inspectionRoutes);
 app.route('/api/feasibility', feasibilityRoutes);
 app.notFound((c) => c.json({ error: 'Not found' }, 404));

@@ -1,6 +1,6 @@
 # Implementation plan
 
-Last updated: 2026-09-18. Maintain this plan after each increment or scope
+Last updated: 2026-09-19. Maintain this plan after each increment or scope
 decision. Record evidence, limitations, and review status; do not mark a whole
 milestone complete when only a smaller slice is delivered.
 
@@ -11,7 +11,7 @@ milestone complete when only a smaller slice is delivered.
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
 | **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Completed and accepted                                         |
-| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | Planned                                                        |
+| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.1 awaiting review                               |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
 
@@ -165,7 +165,7 @@ model-generated preference patch.
 
 ## Increment 4: manual briefing in small reviewable slices
 
-### 4.1 — Briefing contract and durable publication foundation: next
+### 4.1 — Briefing contract and durable publication foundation: implemented, awaiting review
 
 Define validated shared contracts for a briefing, its cited story items,
 collection limitations, and lifecycle status. Add Agent-owned SQLite migrations
@@ -187,6 +187,13 @@ Acceptance criteria:
   attribution without storing full publisher articles.
 - `npm run check`, Agent interface tests, local Worker API checks, and empty
   Today/Archive browser states pass.
+
+Delivered: shared, strict briefing schemas; SQLite migration 4 for run and
+publication records; Agent RPC methods for idempotent run creation, atomic
+publication, failure marking, newest briefing reads, and archive metadata; and
+read-only local Today/Archive routes and screens. The routes remain behind the
+existing local diagnostics binding and return no-store JSON. No collection,
+retrieval, model call, Workflow, or Generate action is included.
 
 ### 4.2 — Bounded collection and evidence selection
 
@@ -318,3 +325,11 @@ partial collection failures. Scheduling remains Increment 6.
   `@cf/meta/llama-3.3-70b-instruct-fp8-fast` by user decision. Comparative
   model evaluation remains deferred; Cloudflare's dashboard remains the source
   of usage data.
+- **2026-09-19:** Implemented 4.1, awaiting review: versioned briefing and
+  citation contracts, Agent-owned run/publication migration and idempotency
+  interfaces, plus read-only Today/Archive diagnostics and empty browser
+  states. Collection, evidence selection, composition, Workflow execution,
+  and manual generation remain 4.2–4.4.
+- **2026-09-19:** Corrected fresh database initialization: it now creates the
+  current `preferences.user_id` schema directly. Migration 2 still upgrades an
+  existing version-1 singleton database to the temporary `single-user` key.
