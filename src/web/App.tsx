@@ -14,8 +14,10 @@ export function App() {
         const response = await fetch('/api/health', {
           signal: controller.signal,
         });
+
         if (!response.ok) throw new Error('Connection failed');
         healthSchema.parse(await response.json());
+
         if (!controller.signal.aborted) setConnection('Connected');
       } catch {
         if (!controller.signal.aborted) setConnection('Connection unavailable');
@@ -23,6 +25,7 @@ export function App() {
     }
 
     void checkConnection();
+
     return () => {
       controller.abort();
     };

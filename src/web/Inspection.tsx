@@ -33,10 +33,12 @@ export function Inspection() {
   async function search(value: string) {
     controller.current?.abort();
     const current = new AbortController();
+
     controller.current = current;
     setLoading(true);
     setError(null);
     setResult(null);
+
     try {
       const params = new URLSearchParams({
         q: value,
@@ -46,6 +48,7 @@ export function Inspection() {
       const response = await fetch(`/api/inspection/search?${params}`, {
         signal: current.signal,
       });
+
       if (!response.ok)
         throw new Error(
           response.status === 404
@@ -55,6 +58,7 @@ export function Inspection() {
       const parsed = inspectionSearchResponseSchema.parse(
         await response.json(),
       );
+
       if (!current.signal.aborted) setResult(parsed);
     } catch (cause) {
       if (!current.signal.aborted)
@@ -247,6 +251,7 @@ function StoryCard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
+
   useEffect(
     () => () => {
       controller.current?.abort();
@@ -256,10 +261,12 @@ function StoryCard({
 
   async function retrieve() {
     const current = new AbortController();
+
     controller.current?.abort();
     controller.current = current;
     setLoading(true);
     setError(null);
+
     try {
       const response = await fetch('/api/inspection/evidence', {
         method: 'POST',
@@ -267,6 +274,7 @@ function StoryCard({
         body: JSON.stringify(story),
         signal: current.signal,
       });
+
       if (!response.ok)
         throw new Error(
           `Article inspection failed (HTTP ${String(response.status)}).`,
@@ -274,6 +282,7 @@ function StoryCard({
       const data = inspectionEvidenceResponseSchema.parse(
         await response.json(),
       );
+
       if (!current.signal.aborted) setInspection(data);
     } catch (cause) {
       if (!current.signal.aborted)
@@ -288,6 +297,7 @@ function StoryCard({
   const date = story.publishedAt === null ? null : new Date(story.publishedAt);
   const age = date === null ? null : Date.parse(observedAt) - date.getTime();
   const evidence = inspection?.evidence;
+
   return (
     <article className="story-card">
       <div className="story-meta">

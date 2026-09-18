@@ -9,6 +9,7 @@ import {
 describe('preferences contracts', () => {
   it('round-trips independent topics and user-controlled wording', () => {
     const value = structuredClone(examplePreferences);
+
     value.global.summary.instructions = 'Focus on operational impact.';
     expect(preferencesSchema.parse(JSON.parse(JSON.stringify(value)))).toEqual(
       value,
@@ -17,6 +18,7 @@ describe('preferences contracts', () => {
   it('inherits defaults without weakening global restrictions', () => {
     const value = structuredClone(examplePreferences);
     const topic = value.topics[0];
+
     if (!topic) throw new Error('Missing topic');
     value.global.exclusions = ['Stock prices'];
     value.global.sources.blocked = ['https://blocked.example/'];
@@ -53,6 +55,7 @@ describe('preferences contracts', () => {
       explanation: 'Shorter',
       unresolvedQuestions: [],
     };
+
     expect(topicProposalSchema.safeParse(proposal).success).toBe(true);
     expect(
       topicProposalSchema.safeParse({

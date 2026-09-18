@@ -45,6 +45,7 @@ afterEach(() => {
 describe('local inspector HTTP interface', () => {
   it('is disabled by default and rejects cross-origin requests when enabled', async () => {
     const fetcher = vi.fn();
+
     vi.stubGlobal('fetch', fetcher);
     expect((await worker.fetch(evidenceRequest())).status).toBe(404);
     expect(
@@ -60,6 +61,7 @@ describe('local inspector HTTP interface', () => {
 
   it('validates query and method before contacting providers', async () => {
     const fetcher = vi.fn();
+
     vi.stubGlobal('fetch', fetcher);
     expect(
       (
@@ -97,12 +99,14 @@ describe('local inspector HTTP interface', () => {
         }),
       ),
     );
+
     vi.stubGlobal('fetch', fetcher);
     const response = await worker.fetch(
       new Request(`${origin}/api/inspection/search?q=AI+news`),
       env,
     );
     const data = inspectionSearchResponseSchema.parse(await response.json());
+
     expect(data.stories).toHaveLength(1);
     expect(data.stories[0]?.description?.kind).toBe('search-snippet');
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -116,6 +120,7 @@ describe('local inspector HTTP interface', () => {
     );
     const response = await worker.fetch(evidenceRequest(), env);
     const data = inspectionEvidenceResponseSchema.parse(await response.json());
+
     expect(data).toMatchObject({
       tier: 'description',
       evidence: {
@@ -138,6 +143,7 @@ describe('local inspector HTTP interface', () => {
       }),
       env,
     );
+
     expect(
       inspectionEvidenceResponseSchema.parse(await response.json()),
     ).toMatchObject({ tier: 'headline-only', fallbackDescription: null });
@@ -158,6 +164,7 @@ describe('local inspector HTTP interface', () => {
       }),
       env,
     );
+
     expect(
       inspectionEvidenceResponseSchema.parse(await response.json()),
     ).toMatchObject({ tier: 'headline-only', fallbackDescription: null });
@@ -176,6 +183,7 @@ describe('local inspector HTTP interface', () => {
       ),
     );
     const response = await worker.fetch(evidenceRequest(), env);
+
     expect(
       inspectionEvidenceResponseSchema.parse(await response.json()),
     ).toMatchObject({
@@ -191,6 +199,7 @@ describe('local inspector HTTP interface', () => {
 
   it('rejects unsafe schemes and oversized JSON requests before fetching', async () => {
     const fetcher = vi.fn();
+
     vi.stubGlobal('fetch', fetcher);
     expect(
       (
@@ -215,6 +224,7 @@ describe('bounded article inspection', () => {
         controller.error(new Error('broken'));
       },
     });
+
     expect(
       await retrieveEvidence(story, () =>
         Promise.resolve(
@@ -234,6 +244,7 @@ describe('bounded article inspection', () => {
         cancelled = true;
       },
     });
+
     expect(
       await retrieveEvidence(story, () =>
         Promise.resolve(
@@ -257,6 +268,7 @@ describe('bounded article inspection', () => {
           new Response(html, { headers: { 'content-type': 'text/html' } }),
         ),
       );
+
       expect(result.status).toBe('unavailable');
     }
   });
@@ -268,6 +280,7 @@ describe('bounded article inspection', () => {
     'https://user:pass@publisher.example/',
   ])('rejects reserved/credential destinations: %s', async (sourceUrl) => {
     const fetcher = vi.fn();
+
     expect(
       (await retrieveEvidence({ ...story, sourceUrl }, fetcher)).status,
     ).toBe('unavailable');

@@ -33,6 +33,28 @@ base revision against the current revision. The browser will not resubmit a
 model-generated patch. Rejected, ambiguous, invalid, or stale proposals change
 nothing.
 
+## Persistence foundation
+
+`PersonalBriefingAgent` currently has one local owner, but its preferences row
+uses `user_id TEXT PRIMARY KEY`, rather than a singleton sentinel. Its interface
+is `readPreferences(userId)` and `replacePreferences(document,
+expectedRevision, userId)`. The Worker supplies `single-user` today. When
+Cloudflare Access is enabled, it will validate the Access JWT and pass its
+stable opaque `sub` claim instead. Do not use an email address as the storage
+key: it is personal data and can change.
+
+A first read returns `{ configured: false }`; suggested defaults are never
+stored implicitly. A valid replacement increments revision. A stale replacement
+returns `{ ok: false, currentRevision }`, avoiding custom errors that lose
+identity across Durable Object RPC.
+
+The Agent applies versioned SQLite migrations before operations. Migration 2
+preserves the existing local singleton document as `single-user`; it is needed
+only because this development database already used the earlier schema. New
+deployments begin directly with the user-keyed table. The Worker exposes this
+only through an opt-in local diagnostic route in this slice. Cloudflare Access
+will protect the eventual production interface.
+
 ## Future model and relevance decisions
 
 Model choice remains an evaluation decision. Slice 3.5 will compare configured

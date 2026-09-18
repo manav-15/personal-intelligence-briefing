@@ -82,6 +82,18 @@ runtime edge.
   prompt history retrospectively or omit prompts because they were delivered in
   conversation rather than a tool.
 
+## Code readability
+
+- Separate distinct logical steps within long methods with a blank line.
+- Group related variable declarations together.
+- Add a blank line before control-flow transitions and final return statements.
+- Avoid dense blocks of more than roughly 5–8 statements without visual
+  separation.
+- Prefer extracting a well-named helper when a logical section becomes
+  substantial.
+- Use Prettier for standard formatting and ESLint's padding-line rules for
+  semantic spacing. Run their auto-fix commands before committing.
+
 ## Cost target
 
 Keep the personal deployment below USD 10–20/month by capping search queries,

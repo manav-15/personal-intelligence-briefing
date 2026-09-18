@@ -169,6 +169,71 @@ Agent, Durable Object, topic controls, briefing generation, or chat was added.
 
 ### 3.1–3.2 review and next plan (2026-09-18)
 
+### 3.3 authorization (2026-09-18)
+
+> go ahead an implement
+
+**Outcome:** Began the Durable Object SQLite preference foundation with a
+singleton Cloudflare Agent, declarative SQLite export, explicit schema
+migration, and local-only read/replace diagnostic route. No topic form,
+proposal Apply, model inference, schedule, briefing generation, or chat is in
+scope.
+
+**Validation outcome:** Local Agent initialization returned unconfigured state;
+a valid document was saved at revision 1, a stale write returned HTTP 409, and
+the document survived restarting the local Worker. The Agent returns explicit
+conflict values because Error subclasses do not retain identity across RPC.
+
+### User-keyed preference storage (2026-09-18)
+
+> Then let' just keep it as userID, and then for now hardcode the userID - this will avoid schema migration. what are standard practices around this
+
+**Outcome:** Replaced the persisted singleton sentinel with a `user_id` primary
+key and hardcoded `single-user` at the Worker edge. Documented that a validated
+Cloudflare Access JWT `sub`, not an email, will become the production key. A
+local migration remains necessary to preserve the already-created development
+schema; new installations use the user-keyed table directly.
+
+### Hono HTTP refactor (2026-09-18)
+
+> I noticed we are doing a lot of boilerplate API handling.
+> Refactor the Worker HTTP layer to Hono in one reviewable increment.
+>
+> 1. **Install and pin Hono.** Keep React/Vite, Workers Static Assets, Agent RPC, and existing Zod contracts.
+> 2. **Replace manual routing.** Keep `src/server/index.ts` as the small app composition entrypoint and preserve the `PersonalBriefingAgent` export. Group preferences, inspection, and discovery feasibility handlers under `src/server/routes/`.
+> 3. **Consolidate repeated HTTP policy.** Use small middleware functions for diagnostic enablement, origin checks, and cache headers where behavior is shared. Preserve route-specific differences and guard ordering. Use `c.json()` for responses; avoid introducing a generic controller/service framework.
+> 4. **Preserve contracts and safety.** Keep URLs, response bodies, status codes, revision conflicts, diagnostic flags, and bounded body reads. Explicitly preserve JSON 404s and 405s with `Allow`, including HEAD/OPTIONS behavior—do not rely on framework defaults. Unknown API routes must never return SPA HTML.
+> 5. **Retain runtime validation.** Reuse existing Zod schemas, including validation inside Agent RPC methods. Validate untrusted JSON before accessing fields. Preserve inspection’s streamed 16 KB limit before parsing. Keep domain logic in the existing modules; Hono should own HTTP handling.
+> 6. **Verify and document.** Adapt existing request-level tests and cover method handling, disabled diagnostics, cross-origin rejection, malformed/oversized bodies, and revision conflicts. Run `npm run check`, start the local Worker/frontend, and smoke-test affected pages and routes. Update architecture/setup guidance, implementation-plan status and validation, and PROMPTS.md; update data-pipeline.md if behavior changes.
+>
+> Deliver the diff, validation results, and any intentional behavior changes, then stop for review.
+
+**Outcome:** Pinned Hono 4.13.8, extracted route groups and small policy
+middleware, retained Agent RPC/domain modules, and added HTTP contract tests.
+Raw-method guards preserve HEAD rejection despite Hono's GET fallback. Added
+explicit preference envelope validation and JSON 500 handling. Discovery,
+evidence, persistence, and fallback behavior are unchanged, so the pipeline
+specification requires no behavior update. See the implementation plan for
+verification evidence and review status.
+Live testing found Vite intercepted OPTIONS with 204; disabled its CORS
+middleware so local API requests exercise the Worker's actual method policy.
+
+### TypeScript readability enforcement (2026-09-18)
+
+> Update `AGENTS.md` and the project configuration to enforce consistent,
+> readable TypeScript formatting. Use Prettier for standard formatting and
+> ESLint for blank-line/padding rules. In particular, ensure long methods are
+> not visually congested: add blank lines between distinct logical sections,
+> around control-flow transitions where appropriate, and before final returns.
+> Keep consecutive related declarations/statements grouped together and avoid
+> excessive blank lines. Configure auto-fix so these rules are applied
+> automatically by the existing lint/format commands.
+
+**Outcome:** Added repository readability guidance, ESLint padding-line rules,
+and `eslint --fix` to the existing lint command. Prettier remains the source of
+standard formatting; ESLint inserts semantic spacing and preserves consecutive
+declarations as a group.
+
 > looks alright. commit and give me next plan
 
 **Outcome:** Marked 3.1–3.2 complete after review and defined 3.3 as a

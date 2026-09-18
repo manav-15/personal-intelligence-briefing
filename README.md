@@ -9,6 +9,12 @@ cited briefings with grounded follow-up chat.
 See the maintained [implementation plan](docs/implementation-plan.md) for
 milestone status, acceptance criteria, retained TODOs, and the next increment.
 
+The app now has a singleton `PersonalBriefingAgent` backed by Durable Object
+SQLite. It stores one versioned preferences document and supports atomic,
+revision-checked replacement. The local-only `GET`/`PUT /api/preferences`
+diagnostic needs `PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production
+settings API and remains disabled unless explicitly configured.
+
 Increment 1 establishes the deployable React and Worker foundation. The root
 page now provides a local content inspection screen and `GET /api/health` reports the
 Worker status. Durable Object persistence, AI, scheduling, and Cloudflare Access
@@ -39,6 +45,15 @@ npm run dev
 
 Visit the local URL printed by Vite. The app checks the Worker health endpoint
 on load.
+
+Hono owns the Worker HTTP layer. `src/server/index.ts` composes health,
+preferences, inspection, and feasibility routes from `src/server/routes/` and
+exports the Durable Object class. No additional local service or deployment
+binding is required for Hono. Workers Static Assets still serves the React app;
+`/api` and `/api/*` always reach the Worker and return JSON errors for unknown
+routes. Unsupported methods, including HEAD and OPTIONS, return 405 with
+`Allow` after the route's diagnostic/origin guards. HEAD has no response body.
+Vite CORS interception is disabled so local OPTIONS checks reach these handlers.
 
 Search keywords or use the three topic shortcuts. Inspect source links, search
 descriptions, engine failures, reported dates, and on-demand article text.

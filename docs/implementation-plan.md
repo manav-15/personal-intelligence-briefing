@@ -64,7 +64,7 @@ are implemented. Persistence remains 3.3 and manual management 3.4.
 See [preference contracts](preferences-contracts.md) for inheritance, proposal,
 future model evaluation, and relevance decisions.
 
-### 3.3 — Persistence foundation: next, awaiting implementation authorization
+### 3.3 — Persistence foundation: completed, awaiting review
 
 Introduce one singleton Agent backed by Durable Object SQLite and explicit,
 versioned SQL migrations. Implement a small preference module interface:
@@ -90,6 +90,13 @@ tests use its interface rather than duplicating queries.
 - `npm run check` and deterministic Worker integration tests pass.
 
 ### After 3.3
+
+**HTTP refactor — awaiting review:** replace manual dispatch with pinned Hono,
+group HTTP handlers under `src/server/routes/`, and preserve route-specific
+diagnostic/origin/method/cache policies and bounded evidence reads. Add explicit
+HEAD/OPTIONS and JSON 404 coverage, malformed-body checks, and guard-order tests.
+This is a separate reviewable infrastructure slice before 3.4; domain behavior
+and product scope remain unchanged. Validation results are recorded below.
 
 **3.4 manual topic management** will add Topics and Settings forms over this
 interface: add/edit/pause/delete topics, global defaults, and validation. It
@@ -123,3 +130,20 @@ models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
   contracts, decision record, responsive shell, direct routes, active navigation,
   and preserved content lab. `npm run check` passed with 53 tests; local Topics
   and Content lab routes were verified. Next is 3.3 persistence foundation.
+- **2026-09-18:** Completed 3.3: installed pinned `agents` SDK, configured a
+  SQLite Durable Object export/binding, and added singleton read/replace Agent
+  operations with migration and revision results. Local verification wrote a
+  document, rejected a stale update with HTTP 409, and retained it after a
+  Worker restart. Awaiting final automated validation and review.
+- **2026-09-18:** Replaced the initial singleton-row schema with `user_id` as
+  requested. The local Worker hardcodes `single-user`; future Access integration
+  will use validated Access JWT `sub`. Added migration 2 to preserve local
+  development state; new installations create the user-keyed schema directly.
+- **2026-09-18:** Added project-wide readability guidance and auto-fixing ESLint
+  padding rules. Prettier continues to own standard code formatting; ESLint owns
+  semantic spacing between declarations, control flow, and returns.
+- **2026-09-18:** Implemented Hono route composition and shared HTTP middleware.
+  Preserved diagnostic flags, guard order, cache policy, revision conflicts,
+  explicit 404/405 responses, and streamed inspection limits. Non-object
+  preference JSON now fails envelope validation with a controlled 400; uncaught
+  HTTP errors use a JSON 500. Next slice remains 3.4 after review.

@@ -15,6 +15,7 @@ function jsonResponse(articles: unknown[]): Response {
 describe('GDELT discovery', () => {
   it('builds a bounded English query without exposing query operators as URL parameters', () => {
     const url = gdeltSearchUrl({ query: 'Liverpool FC', maxResults: 3 });
+
     expect(url.searchParams.get('query')).toBe(
       'Liverpool FC sourcelang:english',
     );
@@ -39,6 +40,7 @@ describe('GDELT discovery', () => {
         ]),
       ),
     );
+
     expect(result).toEqual({
       stories: [
         {
@@ -65,6 +67,7 @@ describe('GDELT discovery', () => {
           ]),
         ),
     );
+
     expect(result.stories).toHaveLength(1);
   });
 
@@ -72,8 +75,10 @@ describe('GDELT discovery', () => {
     let requests = 0;
     const result = await discoverGdelt({ query: 'AI news' }, () => {
       requests += 1;
+
       return Promise.resolve(new Response('Slow down', { status: 429 }));
     });
+
     expect(requests).toBe(1);
     expect(result.failures[0]?.code).toBe('provider-rate-limited');
   });
@@ -90,6 +95,7 @@ describe('GDELT discovery', () => {
     const result = await discoverGdelt({ query: 'AI news' }, () =>
       Promise.resolve(response),
     );
+
     expect(result.stories).toEqual([]);
     expect(result.failures[0]?.code).toBe('invalid-response');
   });
@@ -110,6 +116,7 @@ describe('GDELT discovery', () => {
         }),
       ),
     );
+
     expect(result.failures[0]?.code).toBe('response-too-large');
   });
 
@@ -117,6 +124,7 @@ describe('GDELT discovery', () => {
     const result = await discoverGdelt({ query: 'AI news' }, () =>
       Promise.reject(new Error('offline')),
     );
+
     expect(result.failures[0]?.code).toBe('provider-fetch-failed');
   });
 });

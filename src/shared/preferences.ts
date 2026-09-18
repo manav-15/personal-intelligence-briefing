@@ -47,6 +47,7 @@ const globalPreferencesSchema = z.strictObject({
     timezone: z.string().refine((value) => {
       try {
         new Intl.DateTimeFormat('en', { timeZone: value });
+
         return true;
       } catch {
         return false;

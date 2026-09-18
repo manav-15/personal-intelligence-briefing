@@ -35,6 +35,7 @@ export async function discoverGoogleNews(
   const url = googleNewsSearchUrl(input);
 
   let response: Response;
+
   try {
     response = await fetcher(url, {
       headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
@@ -52,6 +53,7 @@ export async function discoverGoogleNews(
   }
 
   const xml = await readText(response, MAX_FEED_BYTES);
+
   if (!xml.ok)
     return failure(
       'feed-too-large',
@@ -80,6 +82,7 @@ export function googleNewsSearchUrl(
   input: z.infer<typeof discoveryRequestSchema>,
 ): URL {
   const ceid = `${input.country}:${input.locale.slice(0, 2)}`;
+
   return new URL(
     `/rss/search?${new URLSearchParams({
       q: input.query,
@@ -101,6 +104,7 @@ function failure(
 function parseRssItems(xml: string): Array<Record<string, string>> {
   return [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].map((match) => {
     const item = match[1] ?? '';
+
     return {
       title: readTag(item, 'title'),
       link: readTag(item, 'link'),
@@ -113,9 +117,11 @@ function parseRssItems(xml: string): Array<Record<string, string>> {
 function normalizeItem(item: Record<string, string>): StoryCandidate | null {
   const title = decodeXml(item.title ?? '').trim();
   const sourceUrl = normalizeGoogleNewsUrl(decodeXml(item.link ?? '').trim());
+
   if (!title || !sourceUrl) return null;
 
   const parsedDate = Date.parse(decodeXml(item.pubDate ?? ''));
+
   return {
     id: sourceUrl,
     title,
@@ -131,10 +137,12 @@ function normalizeItem(item: Record<string, string>): StoryCandidate | null {
 function normalizeGoogleNewsUrl(value: string): string | null {
   try {
     const url = new URL(value);
+
     if (url.protocol !== 'https:' || url.hostname !== GOOGLE_NEWS_HOST)
       return null;
     url.searchParams.delete('oc');
     url.hash = '';
+
     return url.toString();
   } catch {
     return null;
@@ -150,6 +158,7 @@ function readTag(xml: string, name: string): string {
     `<${name}\\b[^>]*>([\\s\\S]*?)<\\/${name}>`,
     'i',
   ).exec(xml);
+
   return match?.[1]?.replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1') ?? '';
 }
 
@@ -171,6 +180,7 @@ async function readText(
   maximumBytes: number,
 ): Promise<{ ok: true; value: string } | { ok: false }> {
   const declaredLength = Number(response.headers.get('content-length'));
+
   if (Number.isFinite(declaredLength) && declaredLength > maximumBytes)
     return { ok: false };
 
@@ -179,12 +189,16 @@ async function readText(
 
   const chunks: Uint8Array[] = [];
   let bytesRead = 0;
+
   for (;;) {
     const { done, value } = await reader.read();
+
     if (done) break;
     bytesRead += value.byteLength;
+
     if (bytesRead > maximumBytes) {
       await reader.cancel();
+
       return { ok: false };
     }
     chunks.push(value);
@@ -192,9 +206,11 @@ async function readText(
 
   const combined = new Uint8Array(bytesRead);
   let offset = 0;
+
   for (const chunk of chunks) {
     combined.set(chunk, offset);
     offset += chunk.byteLength;
   }
+
   return { ok: true, value: new TextDecoder().decode(combined) };
 }

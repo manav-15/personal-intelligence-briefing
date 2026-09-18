@@ -7,6 +7,7 @@ export function plainText(html: string): string {
       const value = number.toLowerCase().startsWith('x')
         ? Number.parseInt(number.slice(1), 16)
         : Number(number);
+
       return value > 0 && value <= 0x10ffff
         ? String.fromCodePoint(value)
         : entity;
@@ -36,6 +37,7 @@ export function hasInformativeDescription(
     text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   const words = normalize(description);
   const headline = new Set(normalize(title));
+
   return (
     description.length >= 80 &&
     words.length >= 12 &&

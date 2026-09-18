@@ -31,17 +31,21 @@ async function resolveEvidence(
   fetcher: Fetcher,
 ): Promise<EvidenceResult> {
   let sourceUrl: URL;
+
   try {
     sourceUrl = new URL(story.sourceUrl);
   } catch {
     return unavailable('The publisher link is not safe to fetch.');
   }
+
   if (sourceUrl.hostname !== 'news.google.com') {
     if (!isFetchablePublisherUrl(sourceUrl))
       return unavailable('The publisher link is not safe to fetch.');
+
     return retrievePublisherEvidence(sourceUrl, fetcher);
   }
   let redirect: Response;
+
   try {
     redirect = await fetcher(story.sourceUrl, {
       redirect: 'manual',
@@ -52,21 +56,26 @@ async function resolveEvidence(
   }
 
   const location = redirect.headers.get('location');
+
   await redirect.body?.cancel();
+
   if (!location)
     return unavailable('Google News did not provide a publisher link.');
 
   let articleUrl: URL;
+
   try {
     articleUrl = new URL(location, story.sourceUrl);
   } catch {
     return unavailable('Google News returned an invalid publisher link.');
   }
+
   if (articleUrl.hostname === 'news.google.com') {
     return unavailable(
       'Google News requires an additional publisher-link decoder before article retrieval.',
     );
   }
+
   if (!isFetchablePublisherUrl(articleUrl))
     return unavailable('The publisher link is not safe to fetch.');
 
@@ -79,6 +88,7 @@ async function retrievePublisherEvidence(
 ): Promise<EvidenceResult> {
   let article: Response;
   const signal = AbortSignal.timeout(10_000);
+
   for (let redirects = 0; ; redirects += 1) {
     try {
       article = await fetcher(articleUrl, {
@@ -89,42 +99,54 @@ async function retrievePublisherEvidence(
     } catch {
       return unavailable('The publisher page could not be reached.');
     }
+
     if (article.status < 300 || article.status >= 400) break;
     const location = article.headers.get('location');
+
     await article.body?.cancel();
+
     if (!location || redirects >= 5)
       return unavailable('The publisher redirect could not be resolved.');
+
     try {
       articleUrl = new URL(location, articleUrl);
     } catch {
       return unavailable('The publisher redirect was invalid.');
     }
+
     if (!isFetchablePublisherUrl(articleUrl))
       return unavailable('The publisher link is not safe to fetch.');
   }
+
   if (!article.ok) {
     await article.body?.cancel();
+
     return unavailable(`The publisher returned ${String(article.status)}.`);
   }
+
   if (
     !article.headers.get('content-type')?.toLowerCase().includes('text/html')
   ) {
     await article.body?.cancel();
+
     return unavailable('The publisher response was not an HTML article.');
   }
 
   const html = await readBoundedText(article, MAX_ARTICLE_BYTES);
+
   if (html === null)
     return unavailable('The publisher page exceeded the size limit.');
   const pageTitle = plainText(
     /<title[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
   );
+
   if (
     /just a moment|access denied|captcha|verify you are human/iu.test(pageTitle)
   ) {
     return unavailable('The publisher returned a challenge page.');
   }
   const { text, extraction } = extractReadableText(html);
+
   if (text.length < MINIMUM_READABLE_CHARACTERS) {
     return unavailable(
       'The publisher page did not contain enough readable evidence.',
@@ -148,12 +170,16 @@ function unavailable(reason: string): EvidenceResult {
 
 function isFetchablePublisherUrl(url: URL): boolean {
   if (!['http:', 'https:'].includes(url.protocol)) return false;
+
   if (url.username || url.password) return false;
   const hostname = url.hostname.toLowerCase();
+
   // Conservatively reject literal IPv6 until a complete address policy is introduced.
   if (hostname.startsWith('[')) return false;
+
   if (/^\d+\.\d+\.\d+\.\d+$/u.test(hostname)) {
     const [first = 0, second = 0] = hostname.split('.').map(Number);
+
     if (
       first === 0 ||
       first === 10 ||
@@ -168,6 +194,7 @@ function isFetchablePublisherUrl(url: URL): boolean {
     )
       return false;
   }
+
   return !(
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
@@ -191,6 +218,7 @@ function extractReadableText(html: string): {
     '',
   );
   const article = /<article\b[^>]*>([\s\S]*?)<\/article>/iu.exec(cleaned)?.[1];
+
   if (article !== undefined)
     return { text: plainText(article), extraction: 'article-region' };
   const region =
@@ -198,5 +226,6 @@ function extractReadableText(html: string): {
   const paragraphs = [...region.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/giu)]
     .map((match) => plainText(match[1] ?? ''))
     .filter((text) => text.length >= 80);
+
   return { text: paragraphs.join('\n\n'), extraction: 'paragraphs' };
 }

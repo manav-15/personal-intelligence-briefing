@@ -1,3 +1,5 @@
 # Local inspection only. Do not enable this diagnostic API in production.
 INSPECTION_ENABLED=true
 SEARXNG_BASE_URL=http://127.0.0.1:8080
+# Local-only, mutable preference diagnostics. Keep unset for deployment.
+PREFERENCES_DIAGNOSTICS_ENABLED=true

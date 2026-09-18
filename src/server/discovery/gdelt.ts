@@ -22,6 +22,7 @@ const articleSchema = z.object({
 export function gdeltSearchUrl(request: z.input<typeof requestSchema>): URL {
   const input = requestSchema.parse(request);
   const url = new URL('https://api.gdeltproject.org/api/v2/doc/doc');
+
   url.search = new URLSearchParams({
     query: `${input.query} sourcelang:english`,
     mode: 'artlist',
@@ -30,6 +31,7 @@ export function gdeltSearchUrl(request: z.input<typeof requestSchema>): URL {
     timespan: '1week',
     sort: 'datedesc',
   }).toString();
+
   return url;
 }
 
@@ -40,6 +42,7 @@ export async function discoverGdelt(
 ): Promise<DiscoveryResult> {
   const input = requestSchema.parse(request);
   let response: Response;
+
   try {
     response = await fetcher(gdeltSearchUrl(input), {
       headers: { Accept: 'application/json' },
@@ -51,6 +54,7 @@ export async function discoverGdelt(
 
   if (!response.ok) {
     await response.body?.cancel();
+
     return failure(
       response.status === 429
         ? 'provider-rate-limited'
@@ -58,6 +62,7 @@ export async function discoverGdelt(
       `GDELT returned ${String(response.status)}.`,
     );
   }
+
   if (
     !response.headers
       .get('content-type')
@@ -65,11 +70,13 @@ export async function discoverGdelt(
       .includes('application/json')
   ) {
     await response.body?.cancel();
+
     return failure('invalid-response', 'GDELT did not return JSON.');
   }
 
   try {
     const text = await readResponse(response);
+
     if (text === null) {
       return failure(
         'response-too-large',
@@ -77,6 +84,7 @@ export async function discoverGdelt(
       );
     }
     const parsed = responseSchema.safeParse(JSON.parse(text) as unknown);
+
     if (!parsed.success) {
       return failure(
         'invalid-response',
@@ -85,13 +93,17 @@ export async function discoverGdelt(
     }
 
     const stories = new Map<string, StoryCandidate>();
+
     for (const article of parsed.data.articles) {
       const candidate = normalizeArticle(article);
+
       if (candidate !== null && !stories.has(candidate.id)) {
         stories.set(candidate.id, candidate);
       }
+
       if (stories.size >= input.maxResults) break;
     }
+
     return { stories: [...stories.values()], failures: [] };
   } catch {
     return failure(
@@ -103,9 +115,11 @@ export async function discoverGdelt(
 
 function normalizeArticle(value: unknown): StoryCandidate | null {
   const parsed = articleSchema.safeParse(value);
+
   if (!parsed.success || parsed.data.language.toLowerCase() !== 'english')
     return null;
   const url = new URL(parsed.data.url);
+
   if (
     !['https:', 'http:'].includes(url.protocol) ||
     url.username ||
@@ -114,6 +128,7 @@ function normalizeArticle(value: unknown): StoryCandidate | null {
     return null;
   url.hash = '';
   const sourceUrl = url.toString();
+
   return {
     id: sourceUrl,
     title: parsed.data.title,
@@ -134,24 +149,32 @@ function failure(
 
 async function readResponse(response: Response): Promise<string | null> {
   const declaredLength = Number(response.headers.get('content-length'));
+
   if (declaredLength > MAX_RESPONSE_BYTES) {
     await response.body?.cancel();
+
     return null;
   }
+
   if (!response.body) return '';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
   let text = '';
+
   for (;;) {
     const { done, value } = await reader.read();
+
     if (done) break;
     bytes += value.byteLength;
+
     if (bytes > MAX_RESPONSE_BYTES) {
       await reader.cancel();
+
       return null;
     }
     text += decoder.decode(value, { stream: true });
   }
+
   return text + decoder.decode();
 }

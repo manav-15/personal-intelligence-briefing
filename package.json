@@ -12,7 +12,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --fix --max-warnings 0",
     "typecheck": "tsc -p tsconfig.web.json && tsc -p tsconfig.server.json && tsc -p tsconfig.tools.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -24,6 +24,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
+    "agents": "0.17.0",
+    "hono": "4.13.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router": "7.18.4",

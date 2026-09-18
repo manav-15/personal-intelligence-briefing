@@ -20,8 +20,10 @@ describe('SearXNG provider interface', () => {
     'filters %s by concrete inclusive dates before capping',
     async (timeRange, days) => {
       const now = Date.parse('2026-09-18T08:00:00Z');
+
       vi.useFakeTimers();
       vi.setSystemTime(now);
+
       try {
         const dates = [
           null,
@@ -42,6 +44,7 @@ describe('SearXNG provider interface', () => {
                   ? url
                   : url.url,
             ).not.toContain('time_range');
+
             return Promise.resolve(
               Response.json({
                 results: dates.map((publishedDate, index) => ({
@@ -53,6 +56,7 @@ describe('SearXNG provider interface', () => {
             );
           },
         );
+
         expect(result.stories).toHaveLength(1);
         expect(result.stories[0]?.sourceUrl).toBe(
           'https://publisher.example/4',
@@ -78,6 +82,7 @@ describe('SearXNG provider interface', () => {
             ? input
             : input.url,
       );
+
       return Promise.resolve(
         Response.json({
           results: [
@@ -95,6 +100,7 @@ describe('SearXNG provider interface', () => {
       'http://localhost:8080',
       fetcher,
     );
+
     expect(String(requestUrl)).not.toContain('time_range=');
     expect(result.stories).toHaveLength(1);
     expect(result.stories[0]).toMatchObject({
@@ -125,6 +131,7 @@ describe('SearXNG provider interface', () => {
           }),
         ),
     );
+
     expect(result.stories).toHaveLength(1);
     expect(result.stories[0]).toMatchObject({
       publishedAt: null,
@@ -163,6 +170,7 @@ describe('SearXNG provider interface', () => {
       'http://localhost:8080',
       () => Promise.resolve(response),
     );
+
     expect(result.stories).toEqual([]);
     expect(result.failures[0]?.code).toBe(code);
   });
@@ -173,6 +181,7 @@ describe('SearXNG provider interface', () => {
       'http://localhost:8080',
       () => Promise.reject(new Error('offline')),
     );
+
     expect(result.failures[0]?.code).toBe('provider-fetch-failed');
   });
 });

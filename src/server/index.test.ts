@@ -9,6 +9,7 @@ describe('Worker HTTP interface', () => {
         'https://briefing.test/api/feasibility/discovery?provider=unknown',
       ),
     );
+
     expect(response.status).toBe(400);
   });
   it('returns the shared health contract without caching', async () => {

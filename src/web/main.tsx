@@ -6,6 +6,7 @@ import { InspectScreen, PlannedScreen } from './Screens';
 import './styles.css';
 
 const root = document.getElementById('root');
+
 if (!root) throw new Error('Missing application root');
 
 /** Browser entrypoint that mounts the routed React application. */

@@ -5,22 +5,29 @@ export async function readBoundedText(
 ): Promise<string | null> {
   if (Number(response.headers.get('content-length')) > maximumBytes) {
     await response.body?.cancel();
+
     return null;
   }
+
   if (!response.body) return '';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
   let text = '';
+
   for (;;) {
     const { done, value } = await reader.read();
+
     if (done) break;
     bytes += value.byteLength;
+
     if (bytes > maximumBytes) {
       await reader.cancel();
+
       return null;
     }
     text += decoder.decode(value, { stream: true });
   }
+
   return text + decoder.decode();
 }

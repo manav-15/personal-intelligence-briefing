@@ -7,6 +7,45 @@ Agent will later own persistent preferences, conversations, briefings, covered
 stories, and run state in Durable Object SQLite. A Workflow will perform the
 daily briefing pipeline.
 
+## HTTP composition (2026-09-18)
+
+Pinned Hono 4.13.8 replaces manual Worker dispatch. `src/server/index.ts`
+composes the route groups in `src/server/routes/` and preserves the
+`PersonalBriefingAgent` export. Hono owns HTTP validation and responses; discovery,
+evidence, shared Zod contracts, and Agent RPC remain separate. Small middleware
+functions handle diagnostic flags, origin rejection, method checks, and cache
+headers. There is no controller/service framework.
+
+Guard order is part of the contract:
+
+- Preferences: diagnostic flag → binding availability → origin → method →
+  PUT-specific same-origin JSON check → validated envelope/document → Agent RPC.
+  Only successful reads/writes receive `no-store`.
+- Inspection: `no-store` for the whole trailing-slash prefix → diagnostic flag →
+  origin → route/method → evidence-specific Origin/content type → streamed
+  16,000-byte limit → JSON parsing and shared schema validation. Unknown children
+  retain those guards; the bare `/api/inspection` mount remains a plain JSON 404.
+- Health: method check followed by a successful `no-store` response.
+- Feasibility: method → provider validation → `no-store` → bounded discovery and
+  evidence. Its existing endpoint has no diagnostic flag; this refactor does not
+  broaden or restrict it. Production authentication remains deferred.
+
+Explicit raw-method checks reject HEAD and OPTIONS with 405 and `Allow`;
+Hono's implicit HEAD-to-GET dispatch cannot trigger a GET handler. HEAD responses
+are bodyless at the HTTP boundary. Unknown API paths return JSON 404s, including
+trailing-slash variants, and Wrangler keeps `/api` and `/api/*` Worker-first.
+Unhandled exceptions receive a JSON 500 instead of Hono's default text response.
+
+Vite's automatic CORS middleware is disabled so local OPTIONS requests reach
+the Worker. It previously returned 204 before dispatch; local responses now
+match the explicit Worker policy. The same-origin frontend needs no CORS grant.
+
+Preference input now receives explicit envelope validation before field access
+and document validation before RPC, in addition to validation inside the Agent.
+Non-object JSON receives the existing `Invalid preference document.` 400 error;
+previously some primitives/arrays reached the missing-revision error instead.
+Discovery/evidence parsing, limits, persistence, and fallback selection are unchanged.
+
 ## Evidence pipeline
 
 The detailed reference, implementation status, fallback policy, and improvement

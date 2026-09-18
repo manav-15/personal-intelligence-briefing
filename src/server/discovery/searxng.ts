@@ -24,6 +24,7 @@ export async function discoverSearxng(
 ): Promise<DiscoveryResult> {
   const input = inspectionSearchSchema.parse(request);
   const url = new URL('/search', baseUrl);
+
   if (!['http:', 'https:'].includes(url.protocol))
     throw new Error('Invalid SearXNG configuration.');
   url.search = new URLSearchParams({
@@ -40,6 +41,7 @@ export async function discoverSearxng(
       ? null
       : new Date(end.getTime() - days[input.timeRange] * 86_400_000);
   let response: Response;
+
   try {
     response = await fetcher(url, {
       headers: { Accept: 'application/json' },
@@ -51,8 +53,10 @@ export async function discoverSearxng(
       'Local SearXNG could not be reached. Run npm run searxng:start.',
     );
   }
+
   if (!response.ok) {
     await response.body?.cancel();
+
     return failed(
       response.status === 429
         ? 'provider-rate-limited'
@@ -60,6 +64,7 @@ export async function discoverSearxng(
       `SearXNG returned ${String(response.status)}.`,
     );
   }
+
   if (
     !response.headers
       .get('content-type')
@@ -67,19 +72,23 @@ export async function discoverSearxng(
       .includes('application/json')
   ) {
     await response.body?.cancel();
+
     return failed(
       'invalid-response',
       'SearXNG did not return JSON. Enable its JSON format.',
     );
   }
+
   try {
     const text = await readBoundedText(response, 750_000);
+
     if (text === null)
       return failed(
         'response-too-large',
         'SearXNG response exceeded the size limit.',
       );
     const parsed = responseSchema.safeParse(JSON.parse(text) as unknown);
+
     if (!parsed.success)
       return failed(
         'invalid-response',
@@ -87,10 +96,13 @@ export async function discoverSearxng(
       );
     const observedAt = new Date().toISOString();
     const stories = new Map<string, StoryCandidate>();
+
     for (const value of parsed.data.results) {
       const item = resultSchema.safeParse(value);
+
       if (!item.success) continue;
       const link = new URL(item.data.url);
+
       if (
         !['http:', 'https:'].includes(link.protocol) ||
         link.username ||
@@ -99,8 +111,10 @@ export async function discoverSearxng(
         continue;
       link.hash = '';
       const sourceUrl = link.toString();
+
       if (sourceUrl.length > 2000) continue;
       const title = plainText(item.data.title).slice(0, 500);
+
       if (!title) continue;
       const date =
         typeof item.data.publishedDate === 'string'
@@ -128,6 +142,7 @@ export async function discoverSearxng(
           : {}),
       };
       const existing = stories.get(sourceUrl);
+
       if (existing)
         existing.engines = [
           ...new Set([...(existing.engines ?? []), ...item.data.engines]),
@@ -141,8 +156,10 @@ export async function discoverSearxng(
         : candidates.filter((story) => {
             if (story.publishedAt === null) return false;
             const date = Date.parse(story.publishedAt);
+
             return date >= start.getTime() && date <= end.getTime();
           });
+
     return {
       stories: eligible.slice(0, input.maxResults),
       ...(start === null

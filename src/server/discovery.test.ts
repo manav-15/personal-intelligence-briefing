@@ -52,6 +52,7 @@ describe('Google News discovery', () => {
     const result = await discoverGoogleNews({ query: 'geopolitics' }, () =>
       Promise.resolve(response('not XML')),
     );
+
     expect(result).toMatchObject({
       stories: [],
       failures: [{ code: 'invalid-feed' }],
@@ -79,6 +80,7 @@ describe('bounded evidence retrieval', () => {
       },
       (input) => {
         urls.push(requestUrl(input));
+
         return Promise.resolve(
           response(`<article>${'Useful evidence. '.repeat(40)}</article>`, {
             headers: { 'content-type': 'text/html' },
@@ -86,6 +88,7 @@ describe('bounded evidence retrieval', () => {
         );
       },
     );
+
     expect(urls).toEqual(['https://publisher.example/article']);
     expect(result).toMatchObject({
       status: 'usable',
@@ -99,9 +102,11 @@ describe('bounded evidence retrieval', () => {
       { ...story, sourceUrl: 'http://127.0.0.1/article', discovery: 'gdelt' },
       () => {
         fetched = true;
+
         return Promise.resolve(response(''));
       },
     );
+
     expect(fetched).toBe(false);
     expect(result.status).toBe('unavailable');
   });
@@ -116,6 +121,7 @@ describe('bounded evidence retrieval', () => {
       },
       () => {
         requests += 1;
+
         return Promise.resolve(
           response('', {
             status: 302,
@@ -124,6 +130,7 @@ describe('bounded evidence retrieval', () => {
         );
       },
     );
+
     expect(requests).toBe(1);
     expect(result).toMatchObject({
       status: 'unavailable',
@@ -147,6 +154,7 @@ describe('bounded evidence retrieval', () => {
               }),
         ),
     );
+
     expect(result).toMatchObject({
       status: 'usable',
       articleUrl: 'https://publisher.example/new',
@@ -157,6 +165,7 @@ describe('bounded evidence retrieval', () => {
     const article = `<html><script>ignore()</script><body><article>${'A useful detail. '.repeat(40)}</article></body></html>`;
     const fetcher: Fetcher = (input) => {
       const url = requestUrl(input);
+
       return Promise.resolve(
         url.includes('news.google.com')
           ? response('', {
@@ -223,6 +232,8 @@ describe('bounded evidence retrieval', () => {
 
 function requestUrl(input: RequestInfo | URL): string {
   if (input instanceof URL) return input.toString();
+
   if (typeof input === 'string') return input;
+
   return input.url;
 }
