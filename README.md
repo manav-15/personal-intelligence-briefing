@@ -15,6 +15,11 @@ revision-checked replacement. The local-only `GET`/`PUT /api/preferences`
 diagnostic needs `PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production
 settings API and remains disabled unless explicitly configured.
 
+With the local diagnostic enabled, Topics supports add, edit, pause, resume,
+and delete. Memory & settings saves global schedule, reading budget, summary,
+source, and exclusion defaults. These screens are a local development surface;
+Cloudflare Access must protect the production settings interface later.
+
 Increment 1 establishes the deployable React and Worker foundation. The root
 page now provides a local content inspection screen and `GET /api/health` reports the
 Worker status. Durable Object persistence, AI, scheduling, and Cloudflare Access

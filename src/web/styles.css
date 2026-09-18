@@ -358,6 +358,127 @@ summary {
 footer {
   margin-top: 32px;
 }
+.preferences-screen {
+  max-width: 920px;
+}
+.preferences-screen > .hint {
+  margin: 24px 0;
+}
+.topic-list {
+  display: grid;
+  gap: 16px;
+  margin: 32px 0;
+}
+.topic-card,
+.form-card {
+  background: #fffef9;
+  border: 1px solid #d6dbd0;
+  border-radius: 12px;
+  padding: 24px;
+}
+.topic-card-heading,
+.button-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.topic-card h2,
+.form-card h2 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+.topic-card code {
+  color: #52615b;
+  font-size: 0.8rem;
+}
+.topic-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.topic-details div {
+  min-width: 0;
+}
+.topic-details dt {
+  color: #52615b;
+  font-size: 0.75rem;
+}
+.topic-details dd {
+  margin: 4px 0 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.preferences-form {
+  display: grid;
+  gap: 22px;
+  align-items: start;
+  margin-top: 20px;
+}
+.preferences-form fieldset {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid #d6dbd0;
+  border-radius: 8px;
+}
+.preferences-form legend {
+  padding: 0 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.preferences-form label {
+  min-width: 0;
+}
+textarea {
+  min-height: 104px;
+  width: 100%;
+  resize: vertical;
+  color: #203b36;
+  background: #fff;
+  border: 1px solid #b8c4b5;
+  border-radius: 6px;
+  padding: 12px;
+  font: inherit;
+  line-height: 1.45;
+}
+.preferences-form .check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+}
+.preferences-form .check input {
+  width: auto;
+  min-height: auto;
+}
+.danger {
+  color: #7c3024;
+  border-color: #d9aaa0;
+  background: #fff5f2;
+}
+.danger:hover:not(:disabled) {
+  background: #f9e4de;
+}
+@media (max-width: 640px) {
+  .field-grid,
+  .topic-details {
+    grid-template-columns: 1fr;
+  }
+  .topic-card,
+  .form-card {
+    padding: 18px;
+  }
+}
 @media (max-width: 720px) {
   main {
     padding: 20px 16px;

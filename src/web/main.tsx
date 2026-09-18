@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes } from 'react-router';
 import { App } from './App';
+import { SettingsScreen, TopicsScreen } from './PreferencesScreens';
 import { InspectScreen, PlannedScreen } from './Screens';
 import './styles.css';
 
@@ -33,15 +34,7 @@ createRoot(root).render(
               </PlannedScreen>
             }
           />
-          <Route
-            path="topics"
-            element={
-              <PlannedScreen title="Topics">
-                Add, edit, pause, and delete independent topics in the next
-                persistence slice.
-              </PlannedScreen>
-            }
-          />
+          <Route path="topics" element={<TopicsScreen />} />
           <Route
             path="archive"
             element={
@@ -51,15 +44,7 @@ createRoot(root).render(
               </PlannedScreen>
             }
           />
-          <Route
-            path="settings"
-            element={
-              <PlannedScreen title="Memory & settings">
-                Global schedule, reading preferences, and deletion controls
-                arrive with persisted preferences.
-              </PlannedScreen>
-            }
-          />
+          <Route path="settings" element={<SettingsScreen />} />
           <Route path="inspect" element={<InspectScreen />} />
         </Route>
         <Route

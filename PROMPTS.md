@@ -218,6 +218,33 @@ verification evidence and review status.
 Live testing found Vite intercepted OPTIONS with 204; disabled its CORS
 middleware so local API requests exercise the Worker's actual method policy.
 
+### Manual topic management (3.4) (2026-09-18)
+
+> got it. implement 3.4 entirely
+
+**Outcome:** Implemented the local persisted Topics and Memory & settings
+screens. Topics supports add, edit, pause, resume, and delete, with summary
+and source overrides. Settings persists global schedule, reading, summary,
+source, and exclusion defaults. The UI validates complete documents before the
+Worker and Agent validate them again, and reloads on revision conflicts.
+Verification included browser CRUD/settings flows, reload, a Worker restart,
+and restoration of temporary test data.
+
+### Inherited topic values (2026-09-18)
+
+> For the topic edit/add options, it would be nice to also know what is the inherited option instead of just inherit
+
+**Outcome:** Topic form controls now display the active global setting in each
+inherit option and placeholder, including summary format/depth/audience/emphasis/
+instructions and source policy values.
+
+### Accept 3.4 and plan the next iteration (2026-09-18)
+
+> Looks good. commit and update relevant docs if needed which track progress, then give me next ireation plan
+
+**Outcome:** Marked 3.4 and its Hono/readability prerequisites accepted,
+committed the completed work, and set the next slice to 3.5 model evaluation.
+
 ### TypeScript readability enforcement (2026-09-18)
 
 > Update `AGENTS.md` and the project configuration to enforce consistent,

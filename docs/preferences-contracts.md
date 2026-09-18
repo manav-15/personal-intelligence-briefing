@@ -55,6 +55,23 @@ deployments begin directly with the user-keyed table. The Worker exposes this
 only through an opt-in local diagnostic route in this slice. Cloudflare Access
 will protect the eventual production interface.
 
+## Manual management (3.4)
+
+The local Topics screen reads the complete document and replaces it using the
+current revision. It can add, edit, pause, resume, and delete an independent
+topic. A browser-created topic ID is a stable lowercase slug derived from the
+name, with a numeric suffix if needed; existing IDs never change during edits.
+All form data is rebuilt as a complete `Topic` and validated by the shared
+schema before the request and again in the Worker and Agent.
+
+Settings edits global schedule, reading budget, summary controls, sources, and
+exclusions through the same complete-document replacement. Topic summary and
+source fields are explicit overrides: omitted values inherit global defaults;
+global blocked sources and exclusions are still combined at read time. A 409
+reloads the durable document and asks the user to review the change before
+trying again. The local API remains a development diagnostic until Access and
+the production settings surface are introduced.
+
 ## Future model and relevance decisions
 
 Model choice remains an evaluation decision. Slice 3.5 will compare configured

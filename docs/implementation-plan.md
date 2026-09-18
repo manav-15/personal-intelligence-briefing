@@ -10,7 +10,7 @@ milestone complete when only a smaller slice is delivered.
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
-| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | 3.1–3.2 in review                                              |
+| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | 3.1–3.4 accepted; 3.5–3.6 planned                              |
 | **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | Planned                                                        |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
@@ -89,18 +89,31 @@ tests use its interface rather than duplicating queries.
   Agent; the content lab and all routes remain available.
 - `npm run check` and deterministic Worker integration tests pass.
 
-### After 3.3
+### 3.4 — Manual topic management: completed and accepted
 
-**HTTP refactor — awaiting review:** replace manual dispatch with pinned Hono,
+Topics and Memory & settings now read and revision-replace the local persisted
+document. Topics can add, edit, pause, resume, and delete independent topics,
+including user wording, exclusions, and summary/source overrides. Settings
+edits global schedule, reading budget, summary defaults, sources, and
+exclusions. Each browser update builds a complete document and validates it
+before the Worker/Agent repeat their own validation. Revision conflicts reload
+the saved document without applying stale changes.
+
+Validation covers client request/response contracts, persisted add/edit/pause,
+global settings, reload, and local Worker restart. The test topic and changed
+test setting were removed after verification. This still uses the local-only
+diagnostic endpoint; Access-backed production settings remains Increment 6.
+
+### After 3.4
+
+**HTTP refactor — completed and accepted:** replaced manual dispatch with pinned Hono,
 group HTTP handlers under `src/server/routes/`, and preserve route-specific
 diagnostic/origin/method/cache policies and bounded evidence reads. Add explicit
 HEAD/OPTIONS and JSON 404 coverage, malformed-body checks, and guard-order tests.
 This is a separate reviewable infrastructure slice before 3.4; domain behavior
 and product scope remain unchanged. Validation results are recorded below.
 
-**3.4 manual topic management** will add Topics and Settings forms over this
-interface: add/edit/pause/delete topics, global defaults, and validation. It
-will not include the model proposal flow. **3.5** evaluates interpretation
+**3.5** evaluates interpretation
 models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
 
 ### 3A validation
@@ -147,3 +160,11 @@ models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
   explicit 404/405 responses, and streamed inspection limits. Non-object
   preference JSON now fails envelope validation with a controlled 400; uncaught
   HTTP errors use a JSON 500. Next slice remains 3.4 after review.
+- **2026-09-18:** Completed 3.4 manual topic management over the local Agent
+  diagnostic: independent topic CRUD/pause, global settings, optimistic
+  revision conflicts, browser validation, and persistence verification across
+  reload and Worker restart. Temporary test data was removed. Next is 3.5
+  model evaluation after review.
+- **2026-09-18:** Accepted 3.4 and committed the Agent, Hono, readability, and
+  manual topic-management work. Added concrete inherited global values to
+  topic override controls. Next is 3.5 model evaluation.

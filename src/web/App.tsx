@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { healthSchema } from '../shared/health';
+import { PreferencesProvider } from './PreferencesContext';
 import { AppShell } from './Screens';
 
 /** Application shell and initial browser-to-Worker connectivity check. */
@@ -31,5 +32,9 @@ export function App() {
     };
   }, []);
 
-  return <AppShell connection={connection} />;
+  return (
+    <PreferencesProvider>
+      <AppShell connection={connection} />
+    </PreferencesProvider>
+  );
 }

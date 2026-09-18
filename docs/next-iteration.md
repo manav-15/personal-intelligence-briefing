@@ -1,8 +1,8 @@
 # Next iteration: integrate local SearXNG and preserve fallback metadata
 
 This document records the completed integration and its historical plan.
-The maintained milestone plan and next slice (3A: app shell and persistent
-topics) are now in [implementation-plan.md](implementation-plan.md).
+The maintained milestone plan and next slice (3.5: model evaluation) are now
+in [implementation-plan.md](implementation-plan.md).
 
 Implemented on 2026-09-18 after authorization. Awaiting user review.
 
