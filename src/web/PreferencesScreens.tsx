@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   effectiveTopicPreferences,
   type Preferences,
   type Topic,
 } from '../shared/preferences';
+import type { StoredTopicProposal } from './preferences-client';
 import { usePreferences } from './usePreferences';
 
 type TopicDraft = {
@@ -27,8 +28,19 @@ type TopicDraft = {
 
 /** Renders independently persisted topics and their effective inherited settings. */
 export function TopicsScreen() {
-  const { preferences, configured, loading, error, update } = usePreferences();
+  const {
+    preferences,
+    configured,
+    loading,
+    error,
+    proposals,
+    update,
+    proposeTopic,
+    actOnProposal,
+  } = usePreferences();
   const [draft, setDraft] = useState<TopicDraft | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -52,6 +64,7 @@ export function TopicsScreen() {
         return { ...current, topics };
       });
       setDraft(null);
+      setEditorOpen(false);
       setMessage(replacingId ? 'Topic saved.' : 'Topic added.');
     } catch (caught) {
       setMessage(errorMessage(caught));
@@ -112,26 +125,94 @@ export function TopicsScreen() {
         revision={preferences.revision}
       />
       <Feedback message={message} />
+      <TopicProposalPanel
+        preferences={preferences}
+        proposals={proposals}
+        saving={saving}
+        onPropose={async (request) => {
+          setSaving(true);
+          setMessage(null);
+
+          try {
+            await proposeTopic(request);
+            setMessage('Proposal ready for review. Preferences are unchanged.');
+          } catch (caught) {
+            setMessage(errorMessage(caught));
+          } finally {
+            setSaving(false);
+          }
+        }}
+        onAction={async (proposalId, action) => {
+          setSaving(true);
+          setMessage(null);
+
+          try {
+            await actOnProposal(proposalId, action);
+            setMessage(
+              action === 'apply' ? 'Proposal applied.' : 'Proposal discarded.',
+            );
+          } catch (caught) {
+            setMessage(errorMessage(caught));
+          } finally {
+            setSaving(false);
+          }
+        }}
+      />
       <div className="topic-list" aria-label="Saved topics">
         {preferences.topics.map((topic) => (
-          <TopicCard
-            key={topic.id}
-            topic={topic}
-            preferences={preferences}
-            disabled={saving}
-            onEdit={() => {
-              setDraft(toTopicDraft(topic));
-            }}
-            onToggle={() => void toggleTopic(topic)}
-            onDelete={() => void deleteTopic(topic)}
-          />
+          <Fragment key={topic.id}>
+            <TopicCard
+              topic={topic}
+              preferences={preferences}
+              disabled={saving}
+              expanded={selectedTopicId === topic.id}
+              onSelect={() => {
+                setSelectedTopicId(topic.id);
+              }}
+            />
+            {selectedTopicId === topic.id ? (
+              <TopicDetailsPanel
+                topic={topic}
+                preferences={preferences}
+                disabled={saving}
+                onClose={() => {
+                  setSelectedTopicId(null);
+                }}
+                onEdit={() => {
+                  setDraft(toTopicDraft(topic));
+                  setEditorOpen(true);
+                  setSelectedTopicId(null);
+                }}
+                onToggle={() => void toggleTopic(topic)}
+                onDelete={() => {
+                  setSelectedTopicId(null);
+                  void deleteTopic(topic);
+                }}
+              />
+            ) : null}
+          </Fragment>
         ))}
       </div>
       {preferences.topics.length === 0 ? (
         <p className="empty-state">No topics yet. Add one below.</p>
       ) : null}
-      <div className="form-card">
-        <h2>{draft === null ? 'Add a topic' : `Edit ${draft.name}`}</h2>
+      <details
+        className="form-card topic-editor"
+        open={editorOpen}
+        onToggle={(event) => {
+          setEditorOpen(event.currentTarget.open);
+        }}
+      >
+        <summary>
+          <strong>
+            {draft === null ? 'Add a topic' : `Edit ${draft.name}`}
+          </strong>
+          <span>
+            {draft === null
+              ? 'Create a topic manually'
+              : 'Change the selected topic'}
+          </span>
+        </summary>
         <TopicForm
           key={`${String(preferences.revision)}:${draft?.id ?? 'new-topic'}`}
           draft={draft ?? emptyTopicDraft()}
@@ -142,14 +223,249 @@ export function TopicsScreen() {
             : {
                 onCancel: () => {
                   setDraft(null);
+                  setEditorOpen(false);
                 },
               })}
           onSave={(topic, replacingId) => void saveTopic(topic, replacingId)}
           saving={saving}
         />
-      </div>
+      </details>
     </section>
   );
+}
+
+/** Lets the user request, review, apply, or discard a scoped model proposal. */
+function TopicProposalPanel({
+  preferences,
+  proposals,
+  saving,
+  onPropose,
+  onAction,
+}: {
+  preferences: Preferences;
+  proposals: StoredTopicProposal[];
+  saving: boolean;
+  onPropose: (request: {
+    request: string;
+    scope:
+      { operation: 'add-topic' } | { operation: 'edit-topic'; topicId: string };
+  }) => Promise<void>;
+  onAction: (proposalId: string, action: 'apply' | 'discard') => Promise<void>;
+}) {
+  const [request, setRequest] = useState('');
+  const [target, setTarget] = useState('add-topic');
+  const pendingCards = proposals.map((stored) => {
+    const { scope } = stored.proposal;
+    const existingTopic =
+      scope.operation === 'edit-topic'
+        ? preferences.topics.find((topic) => topic.id === scope.topicId)
+        : undefined;
+
+    return { stored, existingTopic };
+  });
+
+  function submit(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const scope =
+      target === 'add-topic'
+        ? { operation: 'add-topic' as const }
+        : { operation: 'edit-topic' as const, topicId: target };
+
+    void onPropose({ request, scope }).then(() => {
+      setRequest('');
+    });
+  }
+
+  return (
+    <section className="proposal-panel" aria-label="Topic proposal">
+      <p className="eyebrow">ASSISTED EDITING</p>
+      <h2>Describe a topic change</h2>
+      <p className="hint">
+        The proposal changes nothing until you review and apply it. It can only
+        add or update the selected topic.
+      </p>
+      <form className="preferences-form" onSubmit={submit}>
+        <Field label="Topic to change">
+          <select
+            aria-label="Topic to change"
+            value={target}
+            disabled={saving}
+            onChange={(event) => {
+              setTarget(event.target.value);
+            }}
+          >
+            <option value="add-topic">Add a new topic</option>
+            {preferences.topics.map((topic) => (
+              <option key={topic.id} value={topic.id}>
+                Edit {topic.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="What should change?">
+          <textarea
+            aria-label="What should change?"
+            value={request}
+            disabled={saving}
+            maxLength={1000}
+            placeholder="For example: Follow official AI model releases and developer tools, but exclude stock-price coverage. Use concise technical bullets."
+            onChange={(event) => {
+              setRequest(event.target.value);
+            }}
+            required
+          />
+        </Field>
+        <button className="primary" disabled={saving} type="submit">
+          {saving ? 'Creating proposal…' : 'Create proposal'}
+        </button>
+      </form>
+      {pendingCards.map(({ stored, existingTopic }) => (
+        <TopicProposalCard
+          key={stored.proposal.id}
+          existingTopic={existingTopic}
+          stored={stored}
+          disabled={saving}
+          onAction={onAction}
+        />
+      ))}
+    </section>
+  );
+}
+
+/** Shows a complete proposed topic beside its selected current topic. */
+function TopicProposalCard({
+  stored,
+  existingTopic,
+  disabled,
+  onAction,
+}: {
+  stored: StoredTopicProposal;
+  existingTopic: Topic | undefined;
+  disabled: boolean;
+  onAction: (proposalId: string, action: 'apply' | 'discard') => Promise<void>;
+}) {
+  const { proposal } = stored;
+  const hasQuestions = proposal.unresolvedQuestions.length > 0;
+
+  return (
+    <article className="proposal-card">
+      <p className="eyebrow">PENDING REVIEW</p>
+      <h3>{proposal.proposedTopic.name}</h3>
+      <p>{proposal.explanation}</p>
+      <p className="hint">Request: {proposal.request}</p>
+      <div className="proposal-comparison">
+        <TopicSummary label="Current" topic={existingTopic} />
+        <TopicSummary label="Proposed" topic={proposal.proposedTopic} />
+      </div>
+      {hasQuestions ? (
+        <div className="proposal-questions">
+          <strong>Clarification needed before Apply</strong>
+          <ul>
+            {proposal.unresolvedQuestions.map((question) => (
+              <li key={question}>{question}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <p className="hint">Prompt version: {stored.promptVersion}</p>
+      <div className="button-row">
+        <button
+          className="primary"
+          type="button"
+          disabled={disabled || hasQuestions}
+          onClick={() => void onAction(proposal.id, 'apply')}
+        >
+          Apply proposal
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => void onAction(proposal.id, 'discard')}
+        >
+          Discard
+        </button>
+      </div>
+    </article>
+  );
+}
+
+/** Summarizes the small set of topic fields that matter most during review. */
+function TopicSummary({
+  label,
+  topic,
+}: {
+  label: string;
+  topic: Topic | undefined;
+}) {
+  return (
+    <div>
+      <strong>{label}</strong>
+      {topic === undefined ? (
+        <p>New topic</p>
+      ) : (
+        <dl className="topic-details">
+          <div>
+            <dt>Name</dt>
+            <dd>{topic.name}</dd>
+          </div>
+          <div>
+            <dt>Interests</dt>
+            <dd>{topic.interests.join(', ')}</dd>
+          </div>
+          <div>
+            <dt>Exclusions</dt>
+            <dd>
+              {topic.exclusions.length === 0
+                ? 'None'
+                : topic.exclusions.join(', ')}
+            </dd>
+          </div>
+          <div>
+            <dt>Preference narrative</dt>
+            <dd>{topic.userWording || 'None'}</dd>
+          </div>
+          <div>
+            <dt>Summary overrides</dt>
+            <dd>{summaryOverrideLabel(topic)}</dd>
+          </div>
+          <div>
+            <dt>Source overrides</dt>
+            <dd>{sourceOverrideLabel(topic)}</dd>
+          </div>
+          <div>
+            <dt>Search concepts</dt>
+            <dd>{searchConceptLabel(topic)}</dd>
+          </div>
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function summaryOverrideLabel(topic: Topic): string {
+  const entries = Object.entries(topic.summaryOverrides).map(
+    ([key, value]) =>
+      `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+  );
+
+  return entries.length === 0 ? 'Inherited' : entries.join(' · ');
+}
+
+function sourceOverrideLabel(topic: Topic): string {
+  const entries = Object.entries(topic.sourceOverrides).map(
+    ([key, value]) =>
+      `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`,
+  );
+
+  return entries.length === 0 ? 'Inherited' : entries.join(' · ');
+}
+
+function searchConceptLabel(topic: Topic): string {
+  if (topic.searchConcepts.length === 0) return 'None';
+
+  return topic.searchConcepts
+    .map((concept) => `${concept.terms.join(' ')} (${concept.intent})`)
+    .join(' · ');
 }
 
 /** Renders global briefing defaults that individual topic overrides can inherit. */
@@ -332,21 +648,38 @@ function TopicCard({
   topic,
   preferences,
   disabled,
-  onEdit,
-  onToggle,
-  onDelete,
+  expanded,
+  onSelect,
 }: {
   topic: Topic;
   preferences: Preferences;
   disabled: boolean;
-  onEdit: () => void;
-  onToggle: () => void;
-  onDelete: () => void;
+  expanded: boolean;
+  onSelect: () => void;
 }) {
   const effective = effectiveTopicPreferences(preferences, topic);
 
+  function selectFromKeyboard(event: React.KeyboardEvent<HTMLElement>) {
+    if (disabled || (event.key !== 'Enter' && event.key !== ' ')) return;
+
+    event.preventDefault();
+    onSelect();
+  }
+
   return (
-    <article className="topic-card">
+    <article
+      className="topic-card topic-card-trigger"
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      aria-expanded={expanded}
+      aria-controls={`topic-details-${topic.id}`}
+      aria-label={`View details for ${topic.name}`}
+      onClick={() => {
+        if (!disabled) onSelect();
+      }}
+      onKeyDown={selectFromKeyboard}
+    >
       <div className="topic-card-heading">
         <div>
           <p className="eyebrow">{topic.enabled ? 'ACTIVE' : 'PAUSED'}</p>
@@ -377,12 +710,109 @@ function TopicCard({
           </dd>
         </div>
       </dl>
+      <p className="topic-card-action">View details</p>
+    </article>
+  );
+}
+
+/** Shows complete topic details directly after the selected topic card. */
+function TopicDetailsPanel({
+  topic,
+  preferences,
+  disabled,
+  onClose,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  topic: Topic;
+  preferences: Preferences;
+  disabled: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const effective = effectiveTopicPreferences(preferences, topic);
+
+  return (
+    <article
+      id={`topic-details-${topic.id}`}
+      className="topic-details-panel"
+      aria-labelledby={`topic-details-heading-${topic.id}`}
+    >
+      <div className="topic-card-heading">
+        <div>
+          <p className="eyebrow">{topic.enabled ? 'ACTIVE' : 'PAUSED'}</p>
+          <h2 id={`topic-details-heading-${topic.id}`}>{topic.name}</h2>
+        </div>
+        <button
+          type="button"
+          aria-label="Collapse topic details"
+          onClick={onClose}
+        >
+          Collapse
+        </button>
+      </div>
+      <dl className="topic-details topic-details-expanded">
+        <div>
+          <dt>Topic ID</dt>
+          <dd>{topic.id}</dd>
+        </div>
+        <div>
+          <dt>Interests</dt>
+          <dd>{topic.interests.join(', ')}</dd>
+        </div>
+        <div>
+          <dt>Exclusions</dt>
+          <dd>
+            {topic.exclusions.length === 0
+              ? 'None'
+              : topic.exclusions.join(', ')}
+          </dd>
+        </div>
+        <div>
+          <dt>Preference narrative</dt>
+          <dd>{topic.userWording || 'None'}</dd>
+        </div>
+        <div>
+          <dt>Summary overrides</dt>
+          <dd>{summaryOverrideLabel(topic)}</dd>
+        </div>
+        <div>
+          <dt>Effective summary</dt>
+          <dd>
+            {`${effective.summary.format ?? 'Unspecified'} · ${effective.summary.depth ?? 'Unspecified'} · ${effective.summary.audience ?? 'Unspecified'}`}
+          </dd>
+        </div>
+        <div>
+          <dt>Source overrides</dt>
+          <dd>{sourceOverrideLabel(topic)}</dd>
+        </div>
+        <div>
+          <dt>Effective source policy</dt>
+          <dd>
+            {effective.sources.officialFirst
+              ? 'Official sources first'
+              : 'Standard ordering'}
+          </dd>
+        </div>
+        <div>
+          <dt>Search concepts</dt>
+          <dd>{searchConceptLabel(topic)}</dd>
+        </div>
+      </dl>
       <div className="button-row">
-        <button type="button" disabled={disabled} onClick={onEdit}>
-          Edit
+        <button
+          className="primary"
+          type="button"
+          disabled={disabled}
+          onClick={onEdit}
+        >
+          Edit topic
         </button>
         <button type="button" disabled={disabled} onClick={onToggle}>
-          {topic.enabled ? 'Pause' : 'Resume'}
+          {topic.enabled ? 'Pause topic' : 'Resume topic'}
         </button>
         <button
           className="danger"
@@ -390,7 +820,7 @@ function TopicCard({
           disabled={disabled}
           onClick={onDelete}
         >
-          Delete
+          Delete topic
         </button>
       </div>
     </article>
@@ -456,13 +886,17 @@ function TopicForm({
           }}
         />
       </Field>
-      <Field label="Your wording for this topic">
+      <Field label="Preference narrative">
         <textarea
           value={draft.userWording}
           onChange={(event) => {
             setDraft({ ...draft, userWording: event.target.value });
           }}
         />
+        <p className="hint">
+          Keep context that structured interests and exclusions cannot express.
+          Assisted edits combine this with your new request.
+        </p>
       </Field>
       <fieldset>
         <legend>Summary overrides</legend>

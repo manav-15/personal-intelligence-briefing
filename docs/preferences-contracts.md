@@ -64,6 +64,14 @@ name, with a numeric suffix if needed; existing IDs never change during edits.
 All form data is rebuilt as a complete `Topic` and validated by the shared
 schema before the request and again in the Worker and Agent.
 
+Each topic also stores `userWording`, shown in the UI as its **preference
+narrative**. It is durable free-form context alongside the structured discovery
+fields, rather than a disposable request. During assisted editing, the model
+uses `currentTopic.userWording` and the new request, then returns a concise
+consolidated narrative for explicit review and application. Model proposals
+with an empty narrative, or an unchanged narrative for a non-empty edit request,
+are rejected before storage.
+
 Settings edits global schedule, reading budget, summary controls, sources, and
 exclusions through the same complete-document replacement. Topic summary and
 source fields are explicit overrides: omitted values inherit global defaults;
@@ -74,10 +82,14 @@ the production settings surface are introduced.
 
 ## Future model and relevance decisions
 
-Model choice remains an evaluation decision. Slice 3.5 will compare configured
-Workers AI models against deterministic prompts for interpretation quality,
-ambiguity, exclusions, latency, and measured usage. This contract records model
-provenance later but makes no inference call now.
+The direct topic proposal flow uses
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast`; comparative model evaluation is
+deferred. The first live use is the direct topic proposal flow:
+the Agent validates and stores a `TopicProposal`, and the user reviews it before
+Apply or Discard. Deterministic fixtures still check interpretation boundaries
+without calling Workers AI, while a small human-reviewed smoke set assesses
+quality, ambiguity, and exclusions. Workers AI dashboard usage is reviewed
+outside the application; no LLM usage telemetry is persisted here.
 
 Relevance belongs to briefing generation, not preferences. Code will enforce
 enabled topics, blocked sources, deterministic exclusions, freshness policy,

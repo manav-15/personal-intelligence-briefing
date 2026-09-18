@@ -329,3 +329,125 @@ AP and Sports Illustrated returned 403 with description fallback, and Miami
 Herald timed out. Old/undated results and footer contamination remain documented
 quality gaps. Updated setup, architecture, instructions, and backlog. Verification
 includes automated quality checks, local APIs, browser retrieval, and mobile width.
+
+### Initial model and evaluation policy (2026-09-18)
+
+> We will defer model evaluation and comparison - llama 3.3 should be enough for our basic requirements, our usage should come within the free plan as well. If we any way need the workers paid plan for other infra, it will give enough usage. If the estimate for our usage can go more than 10000 neurons per day, we can think about using smaller models. Right now, let's start with 3.2 3B and monitor usage. Give me more detailed plan about the evals
+
+**Outcome:** Deferred comparative evaluation and selected
+`@cf/meta/llama-3.2-3b-instruct` as the initial model for the upcoming local
+proposal diagnostic. Documented deterministic CI fixtures, an 8–12 request
+human-reviewed live smoke set, and a seven-day usage projection review at
+10,000 neurons/day.
+Llama 3.3 is retained only as a future escalation option.
+
+### Cloudflare-only usage measurement (2026-09-18)
+
+> llm usage can be measured from cloudflare account - our application does not implement LLM usage monitoring on its own
+
+**Outcome:** Removed application-side LLM telemetry and aggregation from the
+planned work. Cloudflare's Workers AI dashboard is the sole usage and billing
+source; the team will manually review its daily data and seven-day projection.
+
+### Direct topic proposal implementation (2026-09-18)
+
+> writing is not a cost for us currently, so move ahead with direct implementation so I can test directly as well through UI
+
+**Outcome:** Combined the diagnostic and later Apply slices into one direct
+Topics workflow. The Agent now stores validated Llama 3.2 3B topic proposals,
+the UI renders a current/proposed review card, and Apply/Discard are explicit,
+revision-checked operations. Workers AI dashboard remains the sole source of
+usage measurement.
+
+### Workers AI authentication setup (2026-09-18)
+
+> Update readme instructions to set up clouflare account api token or authentication with wrangler -
+
+**Outcome:** Added interactive Wrangler login and non-interactive API-token
+setup guidance, clarified that Workers AI inference is remote and consumes the
+selected account's usage, and made the AI remote binding explicit in Wrangler.
+
+### Remote Workers AI local startup (2026-09-18)
+
+> i logged in with wrangler - service does not start now
+
+**Outcome:** Explained and documented the one-time `workers.dev` subdomain
+registration required for Cloudflare's remote AI binding proxy. Local-only mode
+is unsuitable for model testing because Workers AI has no local simulator.
+
+### End-to-end topic proposal verification (2026-09-18)
+
+> never mind, the server started. Check topic proposal flow end to end
+
+> approved
+
+**Outcome:** Read the existing local Worker preferences, loaded the Topics UI,
+and ran one explicitly approved live Workers AI request. The model's first two
+responses exposed object-form JSON handling and invalid topic content (empty
+interests, then a changed edit ID); both were rejected before storage. Tightened
+the JSON schema and prompt to pin edit IDs and require non-empty interests. The
+next response preserved every setting except the requested test wording. Applied
+it, then restored the original preferences with a revision-checked write. The
+final document is revision 12 and the proposal queue is empty.
+
+### Topic details dialog and clarification UX backlog (2026-09-18)
+
+> Okay, I want the topics UI to be changed a little. After the edit proposal modal, when we show the topics - user should be able to click on the topic modal which expands to show topic details, and then we have a edit button to edit the topic if needed. Also note down the earlier UX improvement as todo
+
+**Outcome:** Replaced the saved-topic card actions with an accessible details
+dialog. A user opens a topic card to inspect the complete saved and effective
+configuration, then selects Edit topic, pause/resume, or delete from the dialog.
+Added UX-01 to the maintained backlog for a revise-request flow when a proposal
+needs clarification.
+
+### Inline topic details and compact manual editing (2026-09-18)
+
+> The UI does not work as expected. The expanded modal should open directly below the clicked modal, not al the way bottom. Also we can move Add topic inside a collapsible section - taking a lot of estate right now
+
+**Outcome:** Replaced the centered topic dialog with an inline details panel
+directly after the selected topic card. The manual Add topic editor is now a
+collapsed disclosure by default and opens automatically when the user chooses
+Edit topic.
+
+### Topic-management UX follow-up (2026-09-18)
+
+> Okay, add as a todo for improvement that this topic UX needs improvement
+
+**Outcome:** Added UX-02 to the maintained backlog for a real-use review and
+refinement of topic cards, inline details, and manual editing.
+
+### Durable free-form topic preferences (2026-09-18)
+
+> When we are storing preferences, and transforming to strict schema, we are making a lossy transition. Since LLMs can understand free form text, not storing the free form text is a degradation of quality. we should store a freeform preference text along with other fields - the LLM should use the user request, the previous freeform preference and summarize the new preference.
+
+**Outcome:** Confirmed that each topic already persists `userWording` and made
+it a first-class preference narrative. Assisted interpretation now receives the
+prior narrative plus the new request and must return a concise consolidated
+narrative alongside the structured topic fields for review.
+
+### Consolidated preference-narrative contract (2026-09-18)
+
+> okay implement with the validations and tests
+
+**Outcome:** Updated the Workers AI system prompt to require a non-empty
+`proposedTopic.userWording` that consolidates `currentTopic.userWording` and
+the new request. The model boundary rejects empty narratives and edits that
+leave the narrative unchanged. Added deterministic tests for those failures and
+for a style-only edit that updates both the narrative and summary override.
+
+### Topic-interpreter model selection (2026-09-18)
+
+> Use 3.3 70b model
+
+**Outcome:** Changed the configured Workers AI topic-interpreter model to
+`@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Updated current setup and design
+documentation; historic prompt records remain unchanged.
+
+### Next iteration planning (2026-09-19)
+
+> looks good. what is the next iteration plan
+
+**Outcome:** Marked Increment 3 complete and accepted. Defined Increment 4 as
+four reviewable slices: durable briefing contracts/publication, bounded
+collection and evidence selection, grounded manual composition, then a
+Generate-now Workflow with Today and Archive.

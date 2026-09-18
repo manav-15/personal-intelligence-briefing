@@ -5,10 +5,15 @@ import {
   type Preferences,
 } from '../shared/preferences';
 import {
+  actOnTopicProposal,
+  createTopicProposal,
+  listTopicProposals,
   PreferencesConflictError,
   readPreferences,
   replacePreferences,
+  type StoredTopicProposal,
 } from './preferences-client';
+import type { TopicProposalRequest } from '../shared/preferences';
 import { PreferencesContext } from './preferences-state';
 
 /** Supplies Agent-backed preferences to the manual Topics and Settings screens. */
@@ -17,15 +22,20 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<StoredTopicProposal[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await readPreferences();
+      const [response, pendingProposals] = await Promise.all([
+        readPreferences(),
+        listTopicProposals(),
+      ]);
 
       setConfigured(response.configured);
+      setProposals(pendingProposals);
       setPreferences(
         response.configured
           ? response.preferences
@@ -36,6 +46,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         'Preferences are unavailable. Start the local Worker with PREFERENCES_DIAGNOSTICS_ENABLED=true.',
       );
       setPreferences(null);
+      setProposals([]);
     } finally {
       setLoading(false);
     }
@@ -73,9 +84,41 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [preferences, reload],
   );
 
+  const proposeTopic = useCallback(async (request: TopicProposalRequest) => {
+    const proposal = await createTopicProposal(request);
+
+    setProposals((current) => [...current, proposal]);
+  }, []);
+
+  const actOnProposal = useCallback(
+    async (proposalId: string, action: 'apply' | 'discard') => {
+      const saved = await actOnTopicProposal(proposalId, action);
+
+      if (saved !== undefined) {
+        setPreferences(saved);
+        setConfigured(true);
+      }
+
+      setProposals((current) =>
+        current.filter((proposal) => proposal.proposal.id !== proposalId),
+      );
+    },
+    [],
+  );
+
   return (
     <PreferencesContext.Provider
-      value={{ preferences, configured, loading, error, reload, update }}
+      value={{
+        preferences,
+        configured,
+        loading,
+        error,
+        proposals,
+        reload,
+        update,
+        proposeTopic,
+        actOnProposal,
+      }}
     >
       {children}
     </PreferencesContext.Provider>

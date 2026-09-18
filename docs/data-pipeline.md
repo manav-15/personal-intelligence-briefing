@@ -6,18 +6,18 @@ agreed design; **proposed default** means a reviewable choice not yet shipped.
 
 ## 1. Implementation status
 
-| Area                                              | Current status                                                                   |
-| ------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Natural-language parsing and preference proposals | Not implemented                                                                  |
-| SQLite preferences, conversations, and memory     | Not implemented                                                                  |
-| Google News RSS and GDELT discovery               | Worker providers with fixture tests; recent live GDELT requests returned 429     |
-| SearXNG                                           | Local container, bounded Worker provider, and responsive inspection screen       |
-| Publisher evidence                                | Bounded Worker HTML extraction and separate local paragraph experiment           |
-| Description/snippet preservation and fallback     | SearXNG provenance and inspection qualification implemented; composition planned |
-| Ranking, grouping, briefing generation, chat      | Not implemented                                                                  |
+| Area                                          | Current status                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Natural-language topic proposals              | Llama 3.3 70B proposal/review/Apply flow implemented; one live end-to-end smoke path passed |
+| SQLite preferences and proposals              | Durable Object SQLite preferences and pending/applied/discarded proposal records            |
+| Google News RSS and GDELT discovery           | Worker providers with fixture tests; recent live GDELT requests returned 429                |
+| SearXNG                                       | Local container, bounded Worker provider, and responsive inspection screen                  |
+| Publisher evidence                            | Bounded Worker HTML extraction and separate local paragraph experiment                      |
+| Description/snippet preservation and fallback | SearXNG provenance and inspection qualification implemented; composition planned            |
+| Ranking, grouping, briefing generation, chat  | Not implemented                                                                             |
 
-The feasibility endpoint returns diagnostics, not briefings. No application
-preferences, stories, evidence, or conversations are currently persisted.
+The feasibility endpoint returns diagnostics, not briefings. Preferences and
+topic proposals are persisted; stories, evidence, and conversations are not.
 SearXNG's container cache and ignored secret are infrastructure, not app memory.
 
 ## 2. End-to-end design
@@ -88,9 +88,12 @@ preference request, not a literal search query.
 1. Validate the request size and operation at the API edge. Load the current
    preference revision and explicit scope: add topic, edit a specific topic,
    or edit global settings.
-2. Give the model the request, current settings, supported fields, and output
-   schema. Require a structured field patch, an explanation, and unresolved
-   questions. Do not run searches or write SQL from model output.
+2. Give the model the request, current topic (including `userWording`), current
+   settings, supported fields, and output schema. Require a complete proposed
+   topic whose non-empty narrative consolidates prior intent with the new
+   request, an explanation, and unresolved questions. Reject an unchanged
+   narrative for a non-empty edit request. Do not run searches or write SQL from
+   model output.
 3. Validate the output with Zod and deterministic semantic checks: schedule,
    IANA timezone, lengths, topic IDs, provider IDs, source URLs, and bounded
    search concepts. Schema validation checks shape, not interpretation quality.
@@ -432,28 +435,30 @@ Update this table with each related increment. Close items only against their
 acceptance criteria. Priorities suggest sequencing; proceed one reviewed
 increment at a time.
 
-| ID        | Priority             | Status          | Work                                              | Acceptance criteria                                                                                                                          |
-| --------- | -------------------- | --------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| PREF-01   | Preference phase     | Planned         | Validated schema and proposal/Apply flow          | Ambiguity stays unapplied; unrelated fields preserved; stale revisions rejected; rejection changes nothing                                   |
-| PREF-03   | Before topic prompts | Planned         | Independent persisted topic add/edit/pause/delete | Add preserves existing topics; edit affects selected topic only; paused topics excluded from future run snapshots; one global reading budget |
-| PREF-02   | Preference phase     | Planned         | SQLite migrations and persistence                 | Reload/restart preserve preferences, schedule/timezone, and topic overrides                                                                  |
-| DISC-01   | High                 | Completed       | SearXNG Worker provider                           | Separate file; normalized links and attributed snippets; partial engine errors; local Worker integration passes                              |
-| DISC-02   | High                 | Partial         | Description/provenance fields                     | Informative snippets preserved; headline-only RSS descriptions rejected; absent stays absent                                                 |
-| DISC-03   | High                 | Planned         | Freshness and query quality                       | Old geopolitics filtered; indexing never treated as publication; undated policy reviewed                                                     |
-| DISC-04   | Medium               | Planned         | Throttling and provider failover                  | 429 cannot monopolize run; concurrent calls respect budget; failures retained                                                                |
-| DISC-05   | Medium               | Planned         | Robust RSS/entity parsing                         | CDATA, numeric entities, malformed XML, and empty feeds handled explicitly                                                                   |
-| EVID-01   | High                 | Partial         | Readable-body and challenge detection             | Navigation/consent fails; checked publisher fixtures extract matching article body                                                           |
-| EVID-02   | High                 | Completed       | Stream Worker bounds and contain read failures    | Oversized chunked responses stop early; broken streams return unavailable                                                                    |
-| EVID-03   | High                 | Partial         | Reserved-address/redirect hardening               | IPv4/IPv6 and credentials tested; DNS/host policy documented for Worker runtime                                                              |
-| EVID-04   | High                 | Partial         | Description fallback                              | Strong same-story evidence wins; excluded/old/title-only stories rejected; labels/caps/grounded chat hold                                    |
-| EVID-05   | Later                | Deferred        | JavaScript rendering and evidence refresh         | Quality gain measured against cost; no paywall bypass; provenance retained                                                                   |
-| BRIEF-01  | Briefing phase       | Planned         | Semantic groups and substantial updates           | Duplicate publishers grouped; repeats suppressed; updates explain supported facts                                                            |
-| BRIEF-02  | Briefing phase       | Planned         | Workflow atomic publication                       | Stable snapshots; retries/concurrent launches cannot duplicate; total failure preserves prior date                                           |
-| STORE-01  | Persistence phase    | Decision needed | Proposal/diagnostic retention and evidence TTL    | Explicit policies, Workflow retention understood, deletion cleans unreferenced owned data                                                    |
-| CHAT-01   | Chat phase           | Planned         | Persistent grounded follow-ups                    | History survives restart; snippets never treated as full articles; citations open source links                                               |
-| DEPLOY-01 | Deployment phase     | Deferred        | Private hosted SearXNG                            | Hosting-IP feasibility tested; service authentication rejects unauthorized requests; secrets stay server-side                                |
-| EVAL-01   | High                 | Planned         | Fixtures plus live evaluation                     | Three-topic relevance/freshness/evidence rates recorded, including failures and fallback grounding                                           |
-| COST-01   | Before production    | Planned         | Usage and configurable budgets                    | Provider/model/retrieval usage visible; estimates based on measured daily workload                                                           |
+| ID        | Priority             | Status          | Work                                              | Acceptance criteria                                                                                                                              |
+| --------- | -------------------- | --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PREF-01   | Preference phase     | Awaiting review | Validated schema and proposal/Apply flow          | Ambiguity stays unapplied; unrelated fields preserved; stale revisions rejected; rejection changes nothing                                       |
+| PREF-03   | Before topic prompts | Completed       | Independent persisted topic add/edit/pause/delete | Add preserves existing topics; edit affects selected topic only; paused topics excluded from future run snapshots; one global reading budget     |
+| PREF-02   | Preference phase     | Completed       | SQLite migrations and persistence                 | Reload/restart preserve preferences, schedule/timezone, and topic overrides                                                                      |
+| DISC-01   | High                 | Completed       | SearXNG Worker provider                           | Separate file; normalized links and attributed snippets; partial engine errors; local Worker integration passes                                  |
+| DISC-02   | High                 | Partial         | Description/provenance fields                     | Informative snippets preserved; headline-only RSS descriptions rejected; absent stays absent                                                     |
+| DISC-03   | High                 | Planned         | Freshness and query quality                       | Old geopolitics filtered; indexing never treated as publication; undated policy reviewed                                                         |
+| DISC-04   | Medium               | Planned         | Throttling and provider failover                  | 429 cannot monopolize run; concurrent calls respect budget; failures retained                                                                    |
+| DISC-05   | Medium               | Planned         | Robust RSS/entity parsing                         | CDATA, numeric entities, malformed XML, and empty feeds handled explicitly                                                                       |
+| EVID-01   | High                 | Partial         | Readable-body and challenge detection             | Navigation/consent fails; checked publisher fixtures extract matching article body                                                               |
+| EVID-02   | High                 | Completed       | Stream Worker bounds and contain read failures    | Oversized chunked responses stop early; broken streams return unavailable                                                                        |
+| EVID-03   | High                 | Partial         | Reserved-address/redirect hardening               | IPv4/IPv6 and credentials tested; DNS/host policy documented for Worker runtime                                                                  |
+| EVID-04   | High                 | Partial         | Description fallback                              | Strong same-story evidence wins; excluded/old/title-only stories rejected; labels/caps/grounded chat hold                                        |
+| EVID-05   | Later                | Deferred        | JavaScript rendering and evidence refresh         | Quality gain measured against cost; no paywall bypass; provenance retained                                                                       |
+| BRIEF-01  | Briefing phase       | Planned         | Semantic groups and substantial updates           | Duplicate publishers grouped; repeats suppressed; updates explain supported facts                                                                |
+| BRIEF-02  | Briefing phase       | Planned         | Workflow atomic publication                       | Stable snapshots; retries/concurrent launches cannot duplicate; total failure preserves prior date                                               |
+| STORE-01  | Persistence phase    | Decision needed | Proposal/diagnostic retention and evidence TTL    | Explicit policies, Workflow retention understood, deletion cleans unreferenced owned data                                                        |
+| CHAT-01   | Chat phase           | Planned         | Persistent grounded follow-ups                    | History survives restart; snippets never treated as full articles; citations open source links                                                   |
+| DEPLOY-01 | Deployment phase     | Deferred        | Private hosted SearXNG                            | Hosting-IP feasibility tested; service authentication rejects unauthorized requests; secrets stay server-side                                    |
+| EVAL-01   | High                 | Planned         | Fixtures plus live evaluation                     | Three-topic relevance/freshness/evidence rates recorded, including failures and fallback grounding                                               |
+| COST-01   | Before production    | Planned         | Usage and configurable budgets                    | Provider/model/retrieval usage visible; estimates based on measured daily workload                                                               |
+| UX-01     | Preference phase     | Planned         | Revise an ambiguous topic proposal                | User can retain its selected topic and original request, answer clarification questions, and submit a new reviewable proposal                    |
+| UX-02     | Preference phase     | Planned         | Refine topic-management UX                        | Review real use of topic cards, inline details, and manual editing; reduce friction while retaining explicit review and safe destructive actions |
 
 ### Integration progress against backlog
 

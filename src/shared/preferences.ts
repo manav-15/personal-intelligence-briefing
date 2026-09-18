@@ -81,7 +81,7 @@ export const preferencesSchema = z
     'Topic IDs must be unique',
   );
 
-/** A reviewable, topic-scoped LLM proposal. Application occurs in a later slice. */
+/** A reviewable, topic-scoped LLM proposal that requires explicit application. */
 export const topicProposalSchema = z
   .strictObject({
     id: z.string().min(1).max(100),
@@ -105,10 +105,26 @@ export const topicProposalSchema = z
     'An edit must preserve the selected topic ID',
   );
 
+/** Browser request to interpret one new or existing topic without changing global settings. */
+export const topicProposalRequestSchema = z.strictObject({
+  request: z.string().trim().min(1).max(1_000),
+  scope: z.discriminatedUnion('operation', [
+    z.strictObject({ operation: z.literal('add-topic') }),
+    z.strictObject({
+      operation: z.literal('edit-topic'),
+      topicId: topicSchema.shape.id,
+    }),
+  ]),
+});
+
 /** Complete, runtime-validated preference document. */
 export type Preferences = z.infer<typeof preferencesSchema>;
 /** One independently managed interest configuration. */
 export type Topic = z.infer<typeof topicSchema>;
+/** A stored, reviewable change generated for one topic. */
+export type TopicProposal = z.infer<typeof topicProposalSchema>;
+/** Validated browser request to generate one topic proposal. */
+export type TopicProposalRequest = z.infer<typeof topicProposalRequestSchema>;
 
 /** Resolves inherited topic settings without allowing topic settings to weaken global restrictions. */
 export function effectiveTopicPreferences(

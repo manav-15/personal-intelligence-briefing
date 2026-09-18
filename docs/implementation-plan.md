@@ -10,7 +10,7 @@ milestone complete when only a smaller slice is delivered.
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
-| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | 3.1–3.4 accepted; 3.5–3.6 planned                              |
+| **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Completed and accepted                                         |
 | **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | Planned                                                        |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
@@ -113,8 +113,104 @@ HEAD/OPTIONS and JSON 404 coverage, malformed-body checks, and guard-order tests
 This is a separate reviewable infrastructure slice before 3.4; domain behavior
 and product scope remain unchanged. Validation results are recorded below.
 
-**3.5** evaluates interpretation
-models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
+### 3.5–3.6 — Direct topic proposal review and Apply: completed and accepted
+
+Use Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. Model comparison is
+deferred. The Topics screen now turns one topic-scoped natural-language
+request into a stored, validated `TopicProposal`, then presents a review card
+with the current and proposed topic before the user may apply or discard it.
+
+Keep the model identifier and prompt version in one small configuration module.
+Limit both input context and output tokens, require structured JSON, and validate
+every response with the existing Zod contracts before storage or rendering. A
+failure, malformed response, unsupported request, unresolved question, or stale
+revision leaves preferences unchanged. Do not add a model registry or a general
+evaluation framework.
+
+The application does not store, aggregate, or estimate LLM usage. Cloudflare's
+Workers AI dashboard is the sole billing and neuron-usage source of truth. When
+reviewing the live smoke set or real use, inspect that dashboard against its UTC
+daily reset boundary. Do not retain raw model prompts or responses as usage
+telemetry.
+
+Use the following staged evaluation rather than a model bake-off:
+
+1. **Deterministic contract checks in CI.** Fixture responses cover valid add
+   and edit proposals, invalid JSON, schema-invalid values, ambiguity, a stale
+   base revision, global-scope escape attempts, exclusions, and duplicate topic
+   identifiers. These tests never invoke Workers AI.
+2. **Small live smoke set outside CI.** Use the Topics UI for 8–12 curated
+   requests covering the
+   initial interests, concise/deep and audience changes, exclusions, an
+   ambiguous request, and an instruction that asks to alter global settings.
+   Human review labels each output correct, partly correct, or unsafe; record
+   the result without treating semantic wording as an exact automated oracle.
+3. **Real-use review.** After local use and again after the first deployed use,
+   inspect the Workers AI dashboard for daily neuron consumption. A seven-day
+   projection above 10,000 neurons/day triggers review of request bounds and a
+   smaller model; it does not silently change the model.
+
+At the current published rate (4,625 neurons per million input tokens and
+30,475 per million output tokens), an illustrative 1,000-input/350-output-token
+proposal uses about 15 neurons. That is roughly 650 such requests within the
+10,000-neuron daily free allocation, before other Workers AI work. This is an
+estimate, not a cost guarantee: live provider usage and future briefing calls
+must be measured separately.
+
+The Agent owns proposal records in Durable Object SQLite. Apply retrieves the
+stored record, rechecks its base revision and scope, validates the complete
+resulting preferences document, saves it atomically, and marks the proposal
+applied. Discard changes only proposal status. The browser never submits a
+model-generated preference patch.
+
+## Increment 4: manual briefing in small reviewable slices
+
+### 4.1 — Briefing contract and durable publication foundation: next
+
+Define validated shared contracts for a briefing, its cited story items,
+collection limitations, and lifecycle status. Add Agent-owned SQLite migrations
+and small interfaces to read a dated briefing, list archive metadata, start a
+manual run record, and publish one complete result atomically. A publication is
+identified by a generated run ID and snapshots the preference revision used for
+the run. Do not start discovery, retrieval, model calls, a Workflow, or a new
+user-facing Generate button in this slice.
+
+Acceptance criteria:
+
+- A fresh Durable Object creates the migration and returns empty Today/Archive
+  states without inventing a briefing.
+- A validated fixture briefing survives Agent restart and is returned by dated
+  Today/Archive read interfaces.
+- Repeating a publication for the same run ID cannot create a second briefing.
+- A failed or unpublished run cannot replace the latest dated briefing.
+- Cited items retain source URL, publisher metadata, evidence tier, and topic
+  attribution without storing full publisher articles.
+- `npm run check`, Agent interface tests, local Worker API checks, and empty
+  Today/Archive browser states pass.
+
+### 4.2 — Bounded collection and evidence selection
+
+Snapshot enabled effective topics from the preference revision, invoke the
+existing discovery/evidence adapters under explicit query, result, byte, and
+retry budgets, then normalize exact URL duplicates. Persist only run-scoped
+candidate metadata and evidence provenance required for retry and composition.
+Report partial provider/evidence failures. No semantic ranking or summaries.
+
+### 4.3 — Grounded manual composition
+
+Use Llama 3.3 70B with bounded selected evidence to classify relevance, group
+related stories, identify substantial updates against coverage memory, and
+produce a structured cited briefing. Code validates every cited source ID,
+exclusion, topic scope, length budget, and evidence tier before publication.
+Description fallback remains labelled and cannot support unsupported detail.
+
+### 4.4 — Generate-now Workflow and Today/Archive
+
+Add an idempotent manual launch route that starts a Cloudflare Workflow. The
+Workflow owns retries and passes the run ID through collection, composition, and
+atomic Agent publication. Today renders the newest dated briefing; Archive lists
+prior publications and opens their source links. A run status view explains
+partial collection failures. Scheduling remains Increment 6.
 
 ### 3A validation
 
@@ -128,11 +224,23 @@ models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
 
 ### 3B validation
 
-- Deterministic interpretation fixtures preserve requested style/exclusions.
+- Deterministic interpretation fixtures preserve requested style/exclusions and
+  reject malformed, ambiguous, scope-escaping, and schema-invalid responses.
 - Rejected, ambiguous, invalid, and stale proposals change nothing.
+- Model proposals require a non-empty preference narrative; an edit whose
+  narrative does not change is rejected before storage.
 - Applied changes survive restart and affect only the selected scope.
-- A separate bounded live model evaluation records interpretation quality and
-  usage; CI does not depend on live inference.
+- The local 3.5 smoke set records human quality labels and validation outcomes;
+  CI does not depend on live inference.
+- Cloudflare's Workers AI dashboard is reviewed by its UTC daily boundary and
+  triggers a documented review when a seven-day projection exceeds 10,000
+  neurons/day. The application stores no LLM usage telemetry.
+- A local Cloudflare-authenticated end-to-end test created a constrained edit
+  proposal, applied it, and restored the original document. The Workers AI
+  JSON-mode response was an object (not a JSON string); the parser accepts both
+  forms and revalidates either. The response schema pins an edit's topic ID and
+  requires non-empty interests, so invalid model output is rejected before it
+  can be stored.
 
 ## Update log
 
@@ -168,3 +276,45 @@ models against fixed fixtures. **3.6** adds topic-scoped proposal/Apply.
 - **2026-09-18:** Accepted 3.4 and committed the Agent, Hono, readability, and
   manual topic-management work. Added concrete inherited global values to
   topic override controls. Next is 3.5 model evaluation.
+- **2026-09-18:** Deferred comparative model evaluation. Slice 3.5 now starts
+  with `@cf/meta/llama-3.2-3b-instruct`, a local proposal diagnostic, bounded
+  live smoke checks, and Workers AI dashboard review. Review request bounds or
+  a smaller model if the seven-day projection exceeds 10,000 neurons/day.
+- **2026-09-18:** Clarified that LLM usage is monitored only in the Cloudflare
+  account. The application will not add LLM usage telemetry or aggregation.
+- **2026-09-18:** Combined the proposed diagnostic and later Apply work by user
+  decision. Implemented the direct Topics UI flow, stored proposal records,
+  explicit Apply/Discard, revision checks, Llama 3.2 3B binding, and deterministic
+  route/model-contract coverage. Awaiting local Cloudflare-authenticated smoke
+  verification and review.
+- **2026-09-18:** Documented interactive Wrangler login and non-interactive API
+  token setup for local Workers AI inference. Made the remote AI binding
+  explicit; local inference consumes the selected Cloudflare account's usage.
+- **2026-09-18:** Documented the one-time `workers.dev` subdomain registration
+  required by Cloudflare's remote Workers AI development proxy. Local-only mode
+  can run the non-AI UI but cannot exercise topic proposals.
+- **2026-09-18:** Ran the approved live 3B smoke path against the local Worker:
+  Workers AI produced a scoped AI-topic proposal, explicit Apply persisted it,
+  and a revision-checked replacement restored the original content. The final
+  document is revision 12 with no pending proposals. Tightened the structured
+  output schema/prompt after observed object-form JSON, an empty-interest
+  attempt, and an invented edit ID; each was rejected before persistence.
+- **2026-09-18:** Changed saved topic cards into accessible inline details
+  panels. Users open a topic to inspect all saved and effective settings, then
+  choose Edit, pause/resume, or delete from that panel. Added UX-01 for revising
+  an ambiguous proposal with its original context retained.
+- **2026-09-18:** Added UX-02 as an explicit follow-up to refine the topic
+  management experience after real use of topic cards, inline details, and the
+  manual editor.
+- **2026-09-18:** Made each topic's durable free-form preference narrative an
+  explicit part of assisted interpretation. Workers AI now receives the prior
+  narrative and new request, then returns the consolidated narrative alongside
+  validated structured fields for review.
+- **2026-09-18:** Strengthened the topic-interpreter prompt to treat
+  `currentTopic.userWording` as the durable narrative and require a new concise
+  consolidation for every request. Added model-boundary checks for an empty or
+  unchanged edit narrative, with deterministic fixtures for a style-only change.
+- **2026-09-18:** Switched topic interpretation to Cloudflare Workers AI
+  `@cf/meta/llama-3.3-70b-instruct-fp8-fast` by user decision. Comparative
+  model evaluation remains deferred; Cloudflare's dashboard remains the source
+  of usage data.

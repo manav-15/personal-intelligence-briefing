@@ -1,5 +1,6 @@
 import { createContext } from 'react';
-import type { Preferences } from '../shared/preferences';
+import type { Preferences, TopicProposalRequest } from '../shared/preferences';
+import type { StoredTopicProposal } from './preferences-client';
 
 /** Browser state supplied by the local persisted-preferences integration. */
 export type PreferencesContextValue = {
@@ -7,8 +8,14 @@ export type PreferencesContextValue = {
   configured: boolean;
   loading: boolean;
   error: string | null;
+  proposals: StoredTopicProposal[];
   reload: () => Promise<void>;
   update: (transform: (current: Preferences) => Preferences) => Promise<void>;
+  proposeTopic: (request: TopicProposalRequest) => Promise<void>;
+  actOnProposal: (
+    proposalId: string,
+    action: 'apply' | 'discard',
+  ) => Promise<void>;
 };
 
 /** Shared context kept separate from components to preserve Fast Refresh boundaries. */

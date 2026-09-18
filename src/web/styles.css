@@ -376,6 +376,83 @@ footer {
   border-radius: 12px;
   padding: 24px;
 }
+.topic-card-trigger {
+  cursor: pointer;
+}
+.topic-card-trigger:hover,
+.topic-card-trigger:focus-visible {
+  border-color: #557366;
+  box-shadow: 0 0 0 3px #d8e5dc;
+  outline: none;
+}
+.topic-card[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.65;
+}
+.topic-card-action {
+  margin-bottom: 0;
+  color: #31594d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.topic-details-panel {
+  padding: 24px;
+  background: #fffef9;
+  border: 1px solid #d6dbd0;
+  border-radius: 12px;
+}
+.topic-details-expanded {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.topic-editor summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+}
+.topic-editor summary span {
+  color: #52615b;
+  font-size: 0.9rem;
+}
+.topic-editor[open] summary {
+  margin-bottom: 20px;
+}
+.proposal-panel,
+.proposal-card {
+  margin: 28px 0;
+  padding: 24px;
+  border: 1px solid #b8c4b5;
+  border-radius: 12px;
+  background: #f1f4eb;
+}
+.proposal-card {
+  margin-bottom: 0;
+  background: #fffef9;
+}
+.proposal-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.proposal-comparison > div {
+  padding: 16px;
+  border: 1px solid #d6dbd0;
+  border-radius: 8px;
+}
+.proposal-comparison .topic-details {
+  grid-template-columns: 1fr;
+  margin-bottom: 0;
+}
+.proposal-questions {
+  padding: 16px;
+  border-left: 3px solid #835715;
+  background: #fff7e9;
+}
+.proposal-questions ul {
+  margin-bottom: 0;
+}
 .topic-card-heading,
 .button-row {
   display: flex;
@@ -471,11 +548,14 @@ textarea {
 }
 @media (max-width: 640px) {
   .field-grid,
-  .topic-details {
+  .topic-details,
+  .topic-details-expanded {
     grid-template-columns: 1fr;
   }
   .topic-card,
-  .form-card {
+  .form-card,
+  .proposal-panel,
+  .proposal-card {
     padding: 18px;
   }
 }
@@ -484,6 +564,9 @@ textarea {
     padding: 20px 16px;
   }
   .story-grid {
+    grid-template-columns: 1fr;
+  }
+  .proposal-comparison {
     grid-template-columns: 1fr;
   }
   .search-panel,

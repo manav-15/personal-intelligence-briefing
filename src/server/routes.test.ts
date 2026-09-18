@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { examplePreferences } from '../shared/preferences';
+import {
+  examplePreferences,
+  topicProposalRequestSchema,
+} from '../shared/preferences';
 import app from './index';
 import type { PersonalBriefingAgent } from './preferences-agent';
 
@@ -9,12 +12,44 @@ const replacePreferences = vi.fn(() => ({
   ok: true as const,
   preferences: examplePreferences,
 }));
+const listPendingTopicProposals = vi.fn(() => []);
+const createTopicProposal = vi.fn(() => ({
+  ok: true as const,
+  proposal: {
+    promptVersion: '2026-09-18.1',
+    proposal: {
+      id: '0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+      baseRevision: 0,
+      request: 'Make AI concise.',
+      scope: { operation: 'edit-topic' as const, topicId: 'ai' },
+      proposedTopic: examplePreferences.topics[0],
+      explanation: 'Uses concise updates.',
+      unresolvedQuestions: [],
+    },
+  },
+}));
+const applyTopicProposal = vi.fn<
+  () => {
+    ok: boolean;
+    preferences?: typeof examplePreferences;
+    error?: string;
+    currentRevision?: number;
+  }
+>(() => ({ ok: true, preferences: examplePreferences }));
+const discardTopicProposal = vi.fn(() => ({ ok: true as const }));
 const env = {
   INSPECTION_ENABLED: 'true',
   PREFERENCES_DIAGNOSTICS_ENABLED: 'true',
   PERSONAL_BRIEFING: {
     idFromName: () => ({}) as DurableObjectId,
-    get: () => ({ readPreferences, replacePreferences }),
+    get: () => ({
+      readPreferences,
+      replacePreferences,
+      listPendingTopicProposals,
+      createTopicProposal,
+      applyTopicProposal,
+      discardTopicProposal,
+    }),
   } as unknown as DurableObjectNamespace<PersonalBriefingAgent>,
 };
 
@@ -27,6 +62,12 @@ describe('HTTP policy compatibility', () => {
   const routes = [
     ['/api/health', 'GET', null],
     ['/api/preferences', 'GET, PUT', null],
+    ['/api/preferences/proposals', 'GET, POST', null],
+    [
+      '/api/preferences/proposals/0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+      'PUT',
+      null,
+    ],
     ['/api/inspection/search', 'GET', 'no-store'],
     ['/api/inspection/evidence', 'POST', 'no-store'],
     ['/api/feasibility/discovery', 'GET', null],
@@ -97,6 +138,11 @@ describe('HTTP policy compatibility', () => {
 
   it.each([
     ['/api/preferences', 'Preference diagnostics are disabled.', null],
+    [
+      '/api/preferences/proposals',
+      'Preference diagnostics are disabled.',
+      null,
+    ],
     ['/api/inspection/search', 'Local inspection is disabled.', 'no-store'],
     ['/api/inspection/missing', 'Local inspection is disabled.', 'no-store'],
   ])(
@@ -132,6 +178,8 @@ describe('HTTP policy compatibility', () => {
 
   it.each([
     '/api/preferences',
+    '/api/preferences/proposals',
+    '/api/preferences/proposals/0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
     '/api/inspection/search',
     '/api/inspection/evidence',
     '/api/inspection/missing',
@@ -223,6 +271,141 @@ describe('HTTP policy compatibility', () => {
       0,
       'single-user',
     );
+  });
+
+  it('creates, reads, and explicitly acts on validated topic proposals', async () => {
+    expect(
+      topicProposalRequestSchema.safeParse({
+        request: 'Make AI concise.',
+        scope: { operation: 'edit-topic', topicId: 'ai' },
+      }).success,
+    ).toBe(true);
+    const created = await app.fetch(
+      new Request(origin + '/api/preferences/proposals', {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request: 'Make AI concise.',
+          scope: { operation: 'edit-topic', topicId: 'ai' },
+        }),
+      }),
+      env,
+    );
+
+    expect(createTopicProposal).toHaveBeenCalledWith(
+      {
+        request: 'Make AI concise.',
+        scope: { operation: 'edit-topic', topicId: 'ai' },
+      },
+      'single-user',
+    );
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({
+      proposal: {
+        promptVersion: '2026-09-18.1',
+        proposal: {
+          id: '0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+          baseRevision: 0,
+          request: 'Make AI concise.',
+          scope: { operation: 'edit-topic', topicId: 'ai' },
+          proposedTopic: examplePreferences.topics[0],
+          explanation: 'Uses concise updates.',
+          unresolvedQuestions: [],
+        },
+      },
+    });
+    const listed = await app.fetch(
+      new Request(origin + '/api/preferences/proposals'),
+      env,
+    );
+
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ proposals: [] });
+    const applied = await app.fetch(
+      new Request(
+        origin +
+          '/api/preferences/proposals/0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+        {
+          method: 'PUT',
+          headers: { Origin: origin, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'apply' }),
+        },
+      ),
+      env,
+    );
+
+    expect(applied.status).toBe(200);
+    expect(applyTopicProposal).toHaveBeenCalledWith(
+      '0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+      'single-user',
+    );
+    expect(await applied.json()).toEqual({ preferences: examplePreferences });
+  });
+
+  it.each([
+    [JSON.stringify({ request: '', scope: { operation: 'add-topic' } })],
+    [JSON.stringify({ request: 'Valid', scope: { operation: 'edit-topic' } })],
+    ['{'],
+  ])(
+    'rejects malformed topic proposal input before Agent RPC: %s',
+    async (body) => {
+      const response = await app.fetch(
+        new Request(origin + '/api/preferences/proposals', {
+          method: 'POST',
+          headers: { Origin: origin, 'Content-Type': 'application/json' },
+          body,
+        }),
+        env,
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: 'Invalid topic proposal request.',
+      });
+      expect(createTopicProposal).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves same-origin policy and revision conflicts for proposal actions', async () => {
+    const crossOrigin = await app.fetch(
+      new Request(origin + '/api/preferences/proposals', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://other.test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          request: 'Make AI concise.',
+          scope: { operation: 'edit-topic', topicId: 'ai' },
+        }),
+      }),
+      env,
+    );
+
+    expect(crossOrigin.status).toBe(403);
+    applyTopicProposal.mockReturnValueOnce({
+      ok: false,
+      error: 'Preferences changed after this proposal was created.',
+      currentRevision: 4,
+    });
+    const conflict = await app.fetch(
+      new Request(
+        origin +
+          '/api/preferences/proposals/0e6d1bea-0cc8-4e85-987e-8c6a76f0ccd4',
+        {
+          method: 'PUT',
+          headers: { Origin: origin, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'apply' }),
+        },
+      ),
+      env,
+    );
+
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toEqual({
+      error: 'Preferences changed after this proposal was created.',
+      currentRevision: 4,
+    });
   });
 
   it('contains malformed inspection JSON and rejects oversized actual streamed bytes', async () => {

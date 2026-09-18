@@ -10,20 +10,21 @@ See the maintained [implementation plan](docs/implementation-plan.md) for
 milestone status, acceptance criteria, retained TODOs, and the next increment.
 
 The app now has a singleton `PersonalBriefingAgent` backed by Durable Object
-SQLite. It stores one versioned preferences document and supports atomic,
-revision-checked replacement. The local-only `GET`/`PUT /api/preferences`
-diagnostic needs `PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production
-settings API and remains disabled unless explicitly configured.
+SQLite. It stores one versioned preferences document plus pending, applied, and
+discarded topic proposals. The Topics screen can ask Llama 3.3 70B to propose one
+new or edited topic; the user reviews a before/after card and explicitly applies
+or discards it. The local-only `/api/preferences` diagnostic needs
+`PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production settings API and
+remains disabled unless explicitly configured.
 
 With the local diagnostic enabled, Topics supports add, edit, pause, resume,
 and delete. Memory & settings saves global schedule, reading budget, summary,
 source, and exclusion defaults. These screens are a local development surface;
 Cloudflare Access must protect the production settings interface later.
 
-Increment 1 establishes the deployable React and Worker foundation. The root
-page now provides a local content inspection screen and `GET /api/health` reports the
-Worker status. Durable Object persistence, AI, scheduling, and Cloudflare Access
-arrive in later reviewed increments.
+The root page provides a local content inspection screen and `GET /api/health`
+reports the Worker status. Scheduling and Cloudflare Access arrive in later
+reviewed increments.
 
 Increment 2 adds Google News RSS and GDELT discovery feasibility. Test GDELT
 locally at `/api/feasibility/discovery?provider=gdelt&q=Liverpool&limit=3`;
@@ -37,7 +38,49 @@ guarantee that publishers allow article retrieval.
 - Node 24.x
 - npm 11+
 - Docker Desktop running for local SearXNG
-- A Cloudflare account is needed only for deployment
+- A Cloudflare account is needed for Workers AI local inference and deployment
+
+## Cloudflare account and Workers AI authentication
+
+Create or use a Cloudflare account before testing assisted topic proposals.
+Workers AI has no local model simulator: its `AI` binding connects to Cloudflare
+remotely, including while the Worker code itself runs locally. Local inference
+therefore consumes Workers AI usage from the selected account.
+
+For interactive development, authenticate Wrangler once in a terminal:
+
+```sh
+npx wrangler login
+npm run dev
+```
+
+Wrangler opens a browser login flow. Use an account that has access to the
+target Cloudflare account and Workers AI. If Cloudflare asks you to accept the
+Llama 3.3 model terms on the first request, complete that account-level step
+before retrying the proposal.
+
+The first remote Workers AI development session also requires an account-level
+`workers.dev` subdomain. If Wrangler shows the subdomain-registration message,
+open its onboarding link, choose an unused subdomain, then run `npm run dev`
+again. This enables Cloudflare's remote binding proxy for AI; it does not deploy
+this app publicly because this project keeps `workers_dev` disabled and has no
+production route configured yet. Do not press the offered local-only mode when
+testing topic proposals: it disables remote bindings, and Workers AI has no
+local model simulator.
+
+For non-interactive shells and CI, create a least-privileged Cloudflare API
+token for the target account, export it in the process that runs Wrangler, and
+keep it out of `.dev.vars`, source files, and Git:
+
+```sh
+export CLOUDFLARE_API_TOKEN="your-token"
+npm run dev
+```
+
+Use Cloudflare's API-token creation flow to grant only the permissions needed
+for the Wrangler commands you run; verify authentication with
+`npx wrangler whoami`. Store CI tokens in the CI provider's secret store. The
+Workers AI dashboard, not this app, shows neuron usage.
 
 ## Local development
 
@@ -47,6 +90,11 @@ cp .dev.vars.example .dev.vars
 npm run searxng:start
 npm run dev
 ```
+
+The Workers AI binding uses your Cloudflare account in local development. The
+authentication steps above are required before testing topic proposals. Neuron
+usage is visible in the Cloudflare Workers AI dashboard; the application does
+not collect usage telemetry.
 
 Visit the local URL printed by Vite. The app checks the Worker health endpoint
 on load.
