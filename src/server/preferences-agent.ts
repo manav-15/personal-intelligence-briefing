@@ -20,6 +20,12 @@ import {
   type BriefingCollectionSnapshot,
 } from './briefing-collection';
 import {
+  buildBriefingCompositionInput,
+  composeBriefing,
+  type BriefingCompositionResult,
+  type BriefingPriorItem,
+} from './briefing-composition';
+import {
   buildTopicProposalInput,
   parseTopicProposalResponse,
   topicProposalModel,
@@ -406,6 +412,70 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     return briefingCollectionResultSchema.parse({
       candidates,
       failures: JSON.parse(run.collection_failures) as unknown,
+    });
+  }
+
+  /** Composes one grounded in-memory draft from an active run without publishing it. */
+  async composeBriefingDraft(
+    runId: string,
+    userId: UserId,
+    date = new Date().toISOString().slice(0, 10),
+  ): Promise<BriefingCompositionResult> {
+    this.ensureSchema();
+    const snapshot = this.readBriefingCollectionSnapshot(runId, userId);
+    const collection = this.readBriefingCollection(runId, userId);
+
+    if (snapshot === undefined || collection === undefined)
+      return { ok: false, error: 'Briefing collection is not available.' };
+
+    if (this.env.AI === undefined)
+      return {
+        ok: false,
+        error: 'Workers AI is not configured for this Worker.',
+      };
+
+    const priorCoverage = this.readRecentBriefingCoverage(userId, date);
+    const input = buildBriefingCompositionInput(
+      snapshot,
+      collection,
+      priorCoverage,
+      date,
+    );
+
+    return composeBriefing(input, this.env.AI);
+  }
+
+  /** Reads compact published items from the preceding seven days for update comparison. */
+  readRecentBriefingCoverage(
+    userId: UserId,
+    date: string,
+  ): BriefingPriorItem[] {
+    this.ensureSchema();
+    const day = Date.parse(`${date}T00:00:00.000Z`);
+
+    if (Number.isNaN(day)) throw new Error('Composition date is invalid.');
+    const cutoff = new Date(day - 6 * 86_400_000).toISOString();
+    const rows = [
+      ...this.ctx.storage.sql.exec<{ document: string }>(
+        `SELECT document FROM briefings WHERE user_id = ? AND published_at >= ? ORDER BY published_at DESC LIMIT 50`,
+        userId,
+        cutoff,
+      ),
+    ];
+
+    return rows.flatMap((row) => {
+      const briefing = briefingSchema.parse(
+        JSON.parse(row.document) as unknown,
+      );
+
+      return briefing.items.map((item) => ({
+        runId: briefing.runId,
+        itemId: item.id,
+        topicIds: item.topicIds,
+        headline: item.headline,
+        summary: item.summary,
+        publishedAt: item.publishedAt,
+      }));
     });
   }
 

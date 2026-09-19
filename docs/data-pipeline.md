@@ -457,7 +457,7 @@ exists; they do not create additional work outside this table.
 | EVID-03   | High                 | Partial         | Reserved-address/redirect hardening                            | IPv4/IPv6 and credentials tested; DNS/host policy documented for Worker runtime                                                                            |
 | EVID-04   | High                 | Partial         | Description fallback                                           | Strong same-story evidence wins; excluded/old/title-only stories rejected; labels/caps/grounded chat hold                                                  |
 | EVID-05   | Later                | Deferred        | JavaScript rendering and evidence refresh                      | Quality gain measured against cost; no paywall bypass; provenance retained                                                                                 |
-| BRIEF-01  | Briefing phase       | Planned         | Grounded composition, semantic groups, and substantial updates | Candidate-only model output materializes code-owned citations; groups/repeats are grounded; relevance rubric is evaluated; updates explain supported facts |
+| BRIEF-01  | Briefing phase       | Partial         | Grounded composition, semantic groups, and substantial updates | Candidate-only model output materializes code-owned citations; groups/repeats are grounded; relevance rubric is evaluated; updates explain supported facts |
 | BRIEF-02  | Briefing phase       | Planned         | Workflow atomic publication                                    | Stable snapshots; retries/concurrent launches cannot duplicate; total failure preserves prior date                                                         |
 | STORE-01  | Persistence phase    | Decision needed | Proposal/diagnostic retention and evidence TTL                 | Explicit policies, Workflow retention understood, deletion cleans unreferenced owned data                                                                  |
 | CHAT-01   | Chat phase           | Planned         | Persistent grounded follow-ups                                 | History survives restart; snippets never treated as full articles; citations open source links                                                             |
@@ -481,6 +481,11 @@ exists; they do not create additional work outside this table.
   coverage, per-provider ceilings, and round-robin allocation. Configured
   SearXNG is the preferred collection provider; Google News and GDELT are
   bounded fallbacks.
+- BRIEF-01: partial; one bounded Llama 3.3 70B composition call now creates a
+  validated in-memory draft from an active collection. It derives citations from
+  code-owned candidates, caps evidence and seven-day prior coverage, and rejects
+  unsupported updates, duplicate selections, and incompatible topic profiles.
+  Workflow publication, live calibration, and presentation remain open.
 - EVID-01: partial; article/paragraph heuristic and challenge detection added,
   but live EWTN extraction still included footer and related text.
 - EVID-03: partial; literal-address guards strengthened, DNS policy pending.

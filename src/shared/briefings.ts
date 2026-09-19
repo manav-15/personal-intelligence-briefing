@@ -21,6 +21,26 @@ export const briefingCitationSchema = z.strictObject({
   evidenceTier: evidenceTierSchema,
 });
 
+/** Identifies a previously published item that a new item materially updates. */
+export const briefingUpdateReferenceSchema = z.strictObject({
+  runId: z.uuid(),
+  itemId: z.string().trim().min(1).max(200),
+});
+
+/** Discloses a supported material change from earlier briefing coverage. */
+export const briefingItemUpdateSchema = z.strictObject({
+  previousItems: z.array(briefingUpdateReferenceSchema).min(1).max(12),
+  whatChanged: text.max(1_000),
+});
+
+/** Records the bounded model policy used to compose a published briefing. */
+export const briefingCompositionProvenanceSchema = z.strictObject({
+  model: z.string().trim().min(1).max(200),
+  promptVersion: z.string().trim().min(1).max(100),
+  evidencePolicyVersion: z.string().trim().min(1).max(100),
+  composedAt: z.iso.datetime(),
+});
+
 /** A cited, topic-attributed story included in a published briefing. */
 export const briefingItemSchema = z.strictObject({
   id: z.string().trim().min(1).max(200),
@@ -29,6 +49,7 @@ export const briefingItemSchema = z.strictObject({
   summary: text,
   publishedAt: z.iso.datetime().nullable(),
   citations: z.array(briefingCitationSchema).min(1).max(10),
+  update: briefingItemUpdateSchema.optional(),
 });
 
 /** A clearly disclosed limitation from a partial briefing run. */
@@ -47,6 +68,7 @@ export const briefingSchema = z.strictObject({
   limitations: z.array(briefingLimitationSchema).max(50),
   items: z.array(briefingItemSchema).min(1).max(30),
   publishedAt: z.iso.datetime(),
+  composition: briefingCompositionProvenanceSchema.optional(),
 });
 
 /** Minimal metadata used to render the briefing archive without loading every item. */
@@ -83,6 +105,8 @@ export const briefingArchiveSchema = z.strictObject({
 
 /** One fully validated published briefing. */
 export type Briefing = z.infer<typeof briefingSchema>;
+/** One cited item in an immutable published briefing. */
+export type BriefingItem = z.infer<typeof briefingItemSchema>;
 /** One archive row without full item payloads. */
 export type BriefingArchiveEntry = z.infer<typeof briefingArchiveEntrySchema>;
 /** Validated input for an idempotent briefing run. */

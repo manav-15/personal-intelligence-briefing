@@ -558,3 +558,34 @@ capped at 2,500 characters per candidate and 36,000 context characters in
 total, with one composition call per run. The Cloudflare Workers AI dashboard
 remains the usage monitor; EVAL-01 will record request/output sizes and
 dashboard-observed usage without adding application telemetry.
+
+### Implement grounded composition (2026-09-19)
+
+> go ahead
+
+**Material coding prompt:** Implement the approved 4.3.1–4.3.3 composition
+slice: accept an active run snapshot and temporary candidates, pack seven days
+of prior coverage within the approved bounds, make one constrained Llama 3.3
+70B call, validate its structured output, and construct citations and update
+provenance from trusted stored candidates. Do not add a generation route,
+Workflow, publication, or application-side LLM usage telemetry.
+
+**Outcome:** Added a tested in-memory composition module and Agent entrypoint.
+The model receives no publisher URLs, cannot invent citations, and its grouped
+items, relevance scores, and update claims are mechanically constrained before
+a validated briefing draft is returned.
+
+### Composition-score prompt review (2026-09-19)
+
+> For each item, return topicFit (0-5), briefingValue (0-3), novelty (0-2), and a reason tied to supplied evidence and context. Scores 0-24 are unrelated/excluded, 25-49 tangential or weak, 50-69 relevant but weak or duplicate, 70-84 a clear fit, and 85-100 high-priority material or a substantial update.
+>
+> this prompt does not explain relation between the individual topicFit etc scores and the overall out of 100 scores. how will the LLM reason about this. Review the LLM prompts carefully
+
+**Outcome:** Audited the composition and topic-interpreter prompts. The topic
+interpreter already defines the saved narrative and structured-field roles.
+The composition prompt was corrected to define each assessment dimension,
+explicitly state `overall = (topicFit + briefingValue + novelty) * 10`, require
+the model to reason with that formula before selection, and state that the
+score cannot override deterministic evidence, exclusion, source, or
+prior-coverage rules. Prompt provenance advanced to `2026-09-19.2`, with a
+deterministic request-contract test.

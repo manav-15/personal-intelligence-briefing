@@ -101,6 +101,34 @@ result. Current default limits are 12 discovery calls, 8 results per call, 36
 deduplicated candidates, and 12 evidence fetches. Retry budget is explicitly
 zero until the Workflow supplies bounded backoff in 4.4.
 
+## Grounded composition draft (2026-09-19)
+
+The Agent can compose an in-memory briefing draft from an active collection
+run. `briefing-composition.ts` is the only module that packs temporary
+candidates, recent published coverage, and effective topic settings into one
+Workers AI request. The Agent supplies a seven-day, active-topic-only history
+of at most 12 compact items; it retains no historical article text for this
+comparison.
+
+The call uses the pinned Llama 3.3 70B model once per composition attempt. It
+receives candidate IDs, attribution metadata, evidence tier/text, user intent,
+exclusions, and effective presentation/source settings. Publisher URLs are
+removed before the request. The response may select only those IDs and returns
+bounded assessment components (`topicFit`, `briefingValue`, and `novelty`),
+presentation copy, and an optional supported update reference. Code computes
+the aggregate score, rejects scores below 70, invalid IDs, repeated candidates,
+unsupported updates, and groups whose effective topic profiles differ. It then
+derives topic IDs, dates, source URLs, publishers, citations, completeness, and
+provenance from trusted stored inputs.
+
+Evidence is capped at 2,500 characters per candidate and 36,000 characters
+combined with prior coverage; prior summaries are capped at 500 characters.
+Description-only items receive a visible limitation. These deterministic bounds
+limit request size; usage is monitored in the Cloudflare Workers AI dashboard,
+with no application telemetry. Composition deliberately does not publish a
+briefing or expose a generation route. Workflow orchestration and atomic
+publication remain the next slice.
+
 ## Discovery feasibility result
 
 Google News RSS returned candidates for the initial AI, world-news, and
@@ -123,8 +151,9 @@ deleted; duplicate-detection data expires after 90 days.
 
 ## Cost controls
 
-Workers AI model selection is configurable. Each run will cap queries,
-retrievals, model input, output, and retries, and record usage. The target is
+Workers AI composition uses a pinned Llama 3.3 70B model with bounded input and
+output. Collection caps queries, retrievals, and retries; Workers AI dashboard
+measurements track usage rather than application-side telemetry. The target is
 below USD 10–20/month for a single user. Email, push, and broad web browsing are
 deferred.
 

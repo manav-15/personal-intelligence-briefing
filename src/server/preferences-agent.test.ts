@@ -147,6 +147,9 @@ describe('persistence document contract', () => {
       idempotent: false,
     });
     expect(agent.readBriefingCollection(runId, 'test-user')).toBeUndefined();
+    expect(
+      agent.readRecentBriefingCoverage('test-user', '2026-09-19'),
+    ).toMatchObject([{ runId, itemId: 'example-story', topicIds: ['ai'] }]);
   });
 
   it('removes temporary evidence after marking a run failed', () => {

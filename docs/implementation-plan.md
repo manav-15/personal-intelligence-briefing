@@ -11,7 +11,7 @@ milestone complete when only a smaller slice is delivered.
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
 | **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Completed and accepted                                         |
-| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.1 awaiting review                               |
+| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.3.1–4.3.3 awaiting review                       |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
 
@@ -233,7 +233,7 @@ empty state without modifying saved preferences.
 
 ### 4.3 — Grounded manual composition
 
-Implement 4.3.1–4.3.3 as one reviewed increment: a deep composition module
+Implemented 4.3.1–4.3.3 as one reviewed increment: a deep composition module
 that accepts a run snapshot, bounded temporary evidence, and seven days of
 compact prior published coverage, then returns a validated in-memory briefing draft or a structured
 composition failure. It owns candidate packing, prompt construction, strict
@@ -421,3 +421,8 @@ partial collection failures. Scheduling remains Increment 6.
 - **2026-09-19:** Hardened 4.2 collection review findings: provider exceptions
   now become bounded partial failures, and failing a run deletes its temporary
   candidate evidence in the same SQLite transaction.
+- **2026-09-19:** Implemented 4.3.1–4.3.3, awaiting review: bounded seven-day
+  prior coverage, one Llama 3.3 70B composition call, strict model-output
+  validation, code-owned citations, relevance scores, update provenance, and
+  in-memory draft generation. No route, Workflow, or database publication was
+  added; those remain 4.4.
