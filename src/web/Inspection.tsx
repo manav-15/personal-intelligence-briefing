@@ -296,7 +296,6 @@ function StoryCard({
 
   const date = story.publishedAt === null ? null : new Date(story.publishedAt);
   const age = date === null ? null : Date.parse(observedAt) - date.getTime();
-  const evidence = inspection?.evidence;
 
   return (
     <article className="story-card">
@@ -309,126 +308,185 @@ function StoryCard({
           {story.title}
         </a>
       </h3>
-      <p className="date-line">
-        {date ? (
-          <>
-            <time dateTime={story.publishedAt ?? undefined}>
-              {date.toLocaleString()}
-            </time>{' '}
-            · date reported by search
-          </>
-        ) : (
-          'Publication date unknown'
-        )}
-        {age !== null && age > 48 * 60 * 60 * 1000 && (
-          <span className="date-warning">Older than 48 hours</span>
-        )}
-        {age !== null && age < -24 * 60 * 60 * 1000 && (
-          <span className="date-warning">Future date — verify</span>
-        )}
-      </p>
+      <StoryDate story={story} date={date} age={age} />
       <p className="hint">
         Engines: {story.engines?.join(', ') || 'Not reported'}
       </p>
-      {story.description ? (
-        <div className="description">
-          <span className="eyebrow">Search description</span>
-          <p>{story.description.text}</p>
-          <span className="hint">
-            Search metadata, not retrieved article text.
-          </span>
-        </div>
-      ) : (
-        <p className="hint">Headline only: no description was supplied.</p>
-      )}
-      <div className="story-actions">
-        <a href={story.sourceUrl} target="_blank" rel="noopener noreferrer">
-          Open source ↗
-        </a>
-        <button
-          disabled={loading}
-          onClick={() => {
-            void retrieve();
-          }}
-          aria-label={`Retrieve article: ${story.title}`}
-        >
-          {loading
-            ? 'Retrieving…'
-            : inspection
-              ? 'Retrieve again'
-              : 'Retrieve article'}
-        </button>
-      </div>
+      <StoryDescription story={story} />
+      <StoryActions
+        story={story}
+        loading={loading}
+        inspected={inspection !== null}
+        onRetrieve={retrieve}
+      />
       {error && (
         <p className="feedback error" role="alert">
           {error}
         </p>
       )}
-      {inspection && (
-        <div className="evidence-panel">
-          <p className="tier">
-            <span className="badge">
-              {inspection.tier === 'article'
-                ? 'Article text'
-                : inspection.tier === 'description'
-                  ? 'Description only'
-                  : 'Headline only'}
-            </span>
-          </p>
-          {evidence?.status === 'usable' ? (
-            <>
-              <p className="hint">
-                {evidence.text.length.toLocaleString()} characters ·{' '}
-                {evidence.extraction === 'article-region'
-                  ? 'Article region'
-                  : 'Paragraph extraction'}{' '}
-                · manually review quality
-              </p>
-              {evidence.pageTitle && (
-                <p className="hint">Page title: {evidence.pageTitle}</p>
-              )}
-              <a
-                href={evidence.articleUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="final-link"
-              >
-                Open final article URL ↗
-              </a>
-              {evidence.truncated && (
-                <p className="feedback warning">
-                  Text truncated to 12,000 characters.
-                </p>
-              )}
-              <details open>
-                <summary>Extracted article text</summary>
-                <pre className="article-text">{evidence.text}</pre>
-              </details>
-            </>
-          ) : (
-            <>
-              <p className="retrieval-failure">
-                Article unavailable:{' '}
-                {evidence?.status === 'unavailable'
-                  ? evidence.reason
-                  : 'No evidence.'}
-              </p>
-              {inspection.fallbackDescription ? (
-                <p>
-                  Only the attributed search description is available. It can
-                  support a concise, limited item; it cannot support deeper
-                  analysis.
-                </p>
-              ) : (
-                <p>
-                  No informative description qualifies for fallback. This result
-                  is a source link only.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {inspection && <EvidencePanel inspection={inspection} />}
     </article>
+  );
+}
+
+function StoryDate({
+  story,
+  date,
+  age,
+}: {
+  story: StoryCandidate;
+  date: Date | null;
+  age: number | null;
+}) {
+  return (
+    <p className="date-line">
+      {date ? (
+        <>
+          <time dateTime={story.publishedAt ?? undefined}>
+            {date.toLocaleString()}
+          </time>{' '}
+          · date reported by search
+        </>
+      ) : (
+        'Publication date unknown'
+      )}
+      {age !== null && age > 48 * 60 * 60 * 1000 && (
+        <span className="date-warning">Older than 48 hours</span>
+      )}
+      {age !== null && age < -24 * 60 * 60 * 1000 && (
+        <span className="date-warning">Future date — verify</span>
+      )}
+    </p>
+  );
+}
+
+function StoryDescription({ story }: { story: StoryCandidate }) {
+  if (!story.description)
+    return <p className="hint">Headline only: no description was supplied.</p>;
+
+  return (
+    <div className="description">
+      <span className="eyebrow">Search description</span>
+      <p>{story.description.text}</p>
+      <span className="hint">Search metadata, not retrieved article text.</span>
+    </div>
+  );
+}
+
+function StoryActions({
+  story,
+  loading,
+  inspected,
+  onRetrieve,
+}: {
+  story: StoryCandidate;
+  loading: boolean;
+  inspected: boolean;
+  onRetrieve: () => Promise<void>;
+}) {
+  return (
+    <div className="story-actions">
+      <a href={story.sourceUrl} target="_blank" rel="noopener noreferrer">
+        Open source ↗
+      </a>
+      <button
+        disabled={loading}
+        onClick={() => {
+          void onRetrieve();
+        }}
+        aria-label={`Retrieve article: ${story.title}`}
+      >
+        {loading
+          ? 'Retrieving…'
+          : inspected
+            ? 'Retrieve again'
+            : 'Retrieve article'}
+      </button>
+    </div>
+  );
+}
+
+function EvidencePanel({
+  inspection,
+}: {
+  inspection: InspectionEvidenceResult;
+}) {
+  const evidence = inspection.evidence;
+
+  return (
+    <div className="evidence-panel">
+      <p className="tier">
+        <span className="badge">{evidenceTierLabel(inspection.tier)}</span>
+      </p>
+      {evidence.status === 'usable' ? (
+        <UsableEvidence evidence={evidence} />
+      ) : (
+        <UnavailableEvidence inspection={inspection} />
+      )}
+    </div>
+  );
+}
+
+function evidenceTierLabel(tier: InspectionEvidenceResult['tier']) {
+  if (tier === 'article') return 'Article text';
+
+  return tier === 'description' ? 'Description only' : 'Headline only';
+}
+
+function UsableEvidence({
+  evidence,
+}: {
+  evidence: Extract<InspectionEvidenceResult['evidence'], { status: 'usable' }>;
+}) {
+  return (
+    <>
+      <p className="hint">
+        {evidence.text.length.toLocaleString()} characters ·{' '}
+        {evidence.extraction === 'article-region'
+          ? 'Article region'
+          : 'Paragraph extraction'}{' '}
+        · manually review quality
+      </p>
+      {evidence.pageTitle && (
+        <p className="hint">Page title: {evidence.pageTitle}</p>
+      )}
+      <a
+        href={evidence.articleUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="final-link"
+      >
+        Open final article URL ↗
+      </a>
+      {evidence.truncated && (
+        <p className="feedback warning">Text truncated to 12,000 characters.</p>
+      )}
+      <details open>
+        <summary>Extracted article text</summary>
+        <pre className="article-text">{evidence.text}</pre>
+      </details>
+    </>
+  );
+}
+
+function UnavailableEvidence({
+  inspection,
+}: {
+  inspection: InspectionEvidenceResult;
+}) {
+  const reason =
+    inspection.evidence.status === 'unavailable'
+      ? inspection.evidence.reason
+      : 'No evidence.';
+
+  return (
+    <>
+      <p className="retrieval-failure">Article unavailable: {reason}</p>
+      <p>
+        {inspection.fallbackDescription
+          ? 'Only the attributed search description is available. It can support a concise, limited item; it cannot support deeper analysis.'
+          : 'No informative description qualifies for fallback. This result is a source link only.'}
+      </p>
+    </>
   );
 }

@@ -426,3 +426,8 @@ partial collection failures. Scheduling remains Increment 6.
   validation, code-owned citations, relevance scores, update provenance, and
   in-memory draft generation. No route, Workflow, or database publication was
   added; those remain 4.4.
+- **2026-09-19:** Reduced enforced cyclomatic complexity from 35 to 20. Split
+  SearXNG response handling and story normalization, publisher-host safety
+  checks, and content-lab card rendering into named helpers while preserving
+  their public behavior. A stricter 10 threshold remains a future refactoring
+  target after this baseline is established.

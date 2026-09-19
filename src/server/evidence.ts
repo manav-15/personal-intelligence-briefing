@@ -177,25 +177,29 @@ function isFetchablePublisherUrl(url: URL): boolean {
   // Conservatively reject literal IPv6 until a complete address policy is introduced.
   if (hostname.startsWith('[')) return false;
 
-  if (/^\d+\.\d+\.\d+\.\d+$/u.test(hostname)) {
-    const [first = 0, second = 0] = hostname.split('.').map(Number);
+  if (isForbiddenIpv4Address(hostname)) return false;
 
-    if (
-      first === 0 ||
-      first === 10 ||
-      first === 127 ||
-      first >= 224 ||
-      (first === 100 && second >= 64 && second <= 127) ||
+  return !isPrivateHostname(hostname);
+}
+
+function isForbiddenIpv4Address(hostname: string): boolean {
+  if (!/^\d+\.\d+\.\d+\.\d+$/u.test(hostname)) return false;
+
+  const [first = 0, second = 0] = hostname.split('.').map(Number);
+
+  return [
+    first === 0 || first === 10 || first === 127 || first >= 224,
+    (first === 100 && second >= 64 && second <= 127) ||
       (first === 169 && second === 254) ||
       (first === 172 && second >= 16 && second <= 31) ||
       (first === 192 && [0, 2, 168].includes(second)) ||
       (first === 198 && [18, 19, 51].includes(second)) ||
-      (first === 203 && second === 0)
-    )
-      return false;
-  }
+      (first === 203 && second === 0),
+  ].some(Boolean);
+}
 
-  return !(
+function isPrivateHostname(hostname: string): boolean {
+  return (
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
     hostname.endsWith('.local') ||

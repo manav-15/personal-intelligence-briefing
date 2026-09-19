@@ -28,7 +28,7 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
-      complexity: ['error', 35],
+      complexity: ['error', 20],
       'max-depth': ['error', 3],
       'max-nested-callbacks': ['error', 4],
       'max-statements': ['error', 50],

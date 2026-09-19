@@ -100,7 +100,7 @@ runtime edge.
   substantial.
 - Use Prettier for standard formatting and ESLint's padding-line rules for
   semantic spacing. Run their auto-fix commands before committing.
-- ESLint limits cyclomatic complexity to 35, block nesting to 3 levels, nested
+- ESLint limits cyclomatic complexity to 20, block nesting to 3 levels, nested
   callbacks to 4 levels, and statements per function to 50. Extract a named
   helper before raising a limit; adjust a limit only after documenting why the
   current codebase cannot meet it.

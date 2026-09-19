@@ -589,3 +589,12 @@ the model to reason with that formula before selection, and state that the
 score cannot override deterministic evidence, exclusion, source, or
 prior-coverage rules. Prompt provenance advanced to `2026-09-19.2`, with a
 deterministic request-contract test.
+
+### Complexity ceiling reduction (2026-09-19)
+
+> Let's do 20 first, and fix the violations
+
+**Outcome:** Reduced the ESLint cyclomatic-complexity ceiling from 35 to 20.
+Refactored the three prior violations into focused helpers without changing
+their external behavior: SearXNG discovery, publisher URL safety, and the
+content-inspection story card. The complete validation gate passes.
