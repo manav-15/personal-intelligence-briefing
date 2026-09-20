@@ -1245,3 +1245,28 @@ same preferences, briefings, chat history, and generation trigger; read-only
 sharing, per-person data, and roles remain DEPLOY-03 and are not implemented. Also
 noted that `ACCESS_ALLOWED_IDENTITIES` should pin those addresses so a
 misconfigured policy cannot admit someone on its own.
+
+### Hosted Access session returns 401 (2026-09-21)
+
+**User report:** “I logged in using my cludflare account and I still see 401
+errors”
+
+**Material coding prompt:** Diagnose the 401 rather than guessing — read the
+verifier, establish which check fails with real evidence from the deployed
+Worker, and fix the cause, not the symptom.
+
+**Outcome:** Root cause was a Workers-runtime semantic, not configuration. The
+AUD tag and JWKS were both correct (the Access login redirect carried
+`kid=e55b9f5a…f608f`, and the team JWKS published the key that signs this
+deployment's tokens). A throwaway probe Worker proved the endpoint is reachable
+from Workers, a second probe importing the real `access.ts` reproduced the
+failure on the edge, and a third proved the mechanism: the runtime brands `fetch`,
+so `input.fetcher(...)` threw `TypeError: Illegal invocation` while a bare call
+returned 200. `access.ts:255` was the only property call site for a fetcher in the
+codebase; Node's unbranded `fetch` is why the suite never caught it. Fixed by
+borrowing the fetcher into a local, added a regression test whose injected fetcher
+throws unless called with no receiver (verified failing pre-fix, passing
+post-fix), and added a token-free denial log so `wrangler tail` names the failing
+branch — which is what made the diagnosis possible. Probes deleted after use.
+Follow-ups recorded as DEV-01 (local dev needs `cloudflared` while the deployment
+is Access-protected) and EVAL-02 (no workerd coverage in the suite).

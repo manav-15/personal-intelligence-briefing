@@ -367,6 +367,32 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Access went live on the hosted Worker, and the first signed-in
+  request exposed a runtime-only defect. The application and policy are configured
+  in Zero Trust, the AUD tag joined `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc`
+  `vars` (committed; neither is a credential), and `ec409d3e` deployed both.
+  Anonymous traffic to the whole hostname now redirects to the Access login —
+  `/`, `/api/health`, `/api/briefings/today`, and `/agents/*` all answer 302 to
+  `briefing-agent.cloudflareaccess.com` — so the Worker's verifier is a second
+  layer rather than the only gate.
+  Every guarded route then answered 401 `Cloudflare Access keys could not be
+fetched.` with a valid session. Cause, proven on Cloudflare's edge with a
+  throwaway probe importing the real module: the Workers runtime brands `fetch`,
+  so the verifier's `input.fetcher(...)` call passed the request object as
+  receiver and threw `TypeError: Illegal invocation`; the broad catch in
+  `keysFor` reported that as unfetchable keys. Node's `fetch` tolerates a foreign
+  receiver, so all 202 tests and every local run stayed green, and `access.ts` was
+  the only property call site for a fetcher in the codebase. Fixed by borrowing
+  the fetcher into a local before calling it, with a regression test whose fetcher
+  throws unless called with no receiver — it fails against the previous call form
+  and passes against this one — deployed as `d9903c9c`. Every denial now also
+  records its reason through `console.warn`, which is what made the failing branch
+  visible in `wrangler tail`; the token, cookie, and claims are never logged.
+  Two follow-ups recorded: DEV-01 (local `npm run dev` cannot start while the
+  deployment is Access-protected, because the remote-binding session that
+  `ai.remote` needs wants `cloudflared`) and EVAL-02 (the suite runs under Node,
+  where branded Workers globals accept a foreign receiver). Hosted generation and
+  channel coverage stay unverified until a signed-in session completes one run.
 - **2026-09-21:** Recorded repository-driven infrastructure as DEPLOY-04 at the
   user's request, deferred to a later increment: a GitHub remote plus an Actions
   workflow that gates on `npm run check` and deploys, with the Access application
@@ -1232,14 +1258,14 @@ tokens, and inject a fake JWKS fetcher: valid token accepted; wrong `aud`; wrong
 the owner id; missing header without Access bindings falls back only under the
 local flag; every rejection path returns a bounded message and no stack.
 
-**P3 — First deployment (DEPLOY-01).** `wrangler secret put SEARXNG_SECRET`,
-deploy, and verify the container starts and answers through its binding. Then
-record hosted-IP engine coverage — which engines respond, how many results carry
-dates, and whether the news engines treat the container's egress IP differently
-than localhost — because that decides whether hosted briefings match what we see
-locally. _Acceptance:_ `/api/health` returns ok, one manual generation publishes
-an edition from the hosted container, diagnostic routes return 404, and the
-engine-coverage measurement is recorded with its limitations.
+**P3 — First deployment (DEPLOY-01).** Deploy with `--config wrangler.jsonc`.
+No container and no container secret are involved. Then record hosted channel
+coverage — whether Google News RSS and GDELT answer from Cloudflare's egress and
+how many of their results carry dates — because the Worker is their only caller.
+_Acceptance:_ the whole hostname redirects to the Access login without a session,
+one signed-in generation publishes an edition from the hosted Worker, diagnostic
+routes return 404, and the channel-coverage measurement is recorded with its
+limitations.
 
 **P4 — Cost and quality measurement (COST-01, EVAL-01).** Read the Cloudflare
 dashboard for Worker, Durable Object, Workflow, container, and Workers AI usage
