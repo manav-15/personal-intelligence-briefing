@@ -15,10 +15,12 @@ creates an ignored `infra/searxng/.env` with a generated secret, starts the
 container, and waits for HTTP readiness. The pinned official image reports
 SearXNG `2026.9.17-274b63b67`.
 
-JSON and HTML formats are enabled. Search uses Bing News, DuckDuckGo News, and
-Brave News. Brave's disabled web engine is retained because its news engine
-shares the parent network configuration. This private instance has no limiter
-or public bot detection, so it does not need Valkey. The same pinned image and
+JSON and HTML formats are enabled. Search uses Bing News, DuckDuckGo News,
+Brave News, Google News, and Reuters. Google News here is SearXNG's engine,
+which is separate from the application's Google News RSS discovery adapter.
+Brave's disabled web engine is retained because its news engine shares the
+parent network configuration. This private instance has no limiter or public
+bot detection, so it does not need Valkey. The same pinned image and
 `settings.yml` are built by the private Cloudflare Container declared in
 `wrangler.jsonc`. Local Compose alone supplies the loopback port and cache
 volume. The Cloudflare Container has no public route and is called only through

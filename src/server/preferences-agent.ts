@@ -1,4 +1,8 @@
-import { Agent } from 'agents';
+import {
+  briefingDiagnosticsSchema,
+  type BriefingDiagnostics,
+} from '../shared/briefing-diagnostics';
+import { AIChatAgent } from '@cloudflare/ai-chat';
 import {
   preferencesSchema,
   topicProposalSchema,
@@ -8,9 +12,11 @@ import {
 import {
   briefingArchiveEntrySchema,
   briefingRunInputSchema,
+  briefingRunStatusResponseSchema,
   briefingSchema,
   type Briefing,
   type BriefingArchiveEntry,
+  type BriefingRunStatusResponse,
 } from '../shared/briefings';
 import {
   briefingCollectionResultSchema,
@@ -32,6 +38,21 @@ import {
   type StoredTopicProposal,
 } from './topic-proposals';
 import type { SearxngContainer } from './searxng-container';
+import {
+  briefingChatModel,
+  buildBriefingChatContext,
+  ensureChatCitation,
+  parseChatModelResponse,
+  parseChatRequest,
+} from './chat-context';
+import {
+  chatMessageSchema,
+  chatSessionMessagesSchema,
+  chatSessionSchema,
+  type ChatMessage,
+  type ChatSession,
+} from '../shared/chat';
+import { z } from 'zod';
 
 /** Bindings used by the singleton preferences Agent. */
 export type PreferencesAgentEnv = {
@@ -64,6 +85,11 @@ export type TopicProposalActionResult =
 export type BriefingRunStartResult =
   { ok: true; created: boolean } | { ok: false; error: string };
 
+/** Outcome of atomically reserving one manual briefing run for a user. */
+export type ManualBriefingRunResult =
+  | { ok: true; runId: string; date: string; created: boolean }
+  | { ok: false; error: string };
+
 /** Outcome of atomically publishing an already composed briefing. */
 export type BriefingPublishResult =
   | { ok: true; briefing: Briefing; idempotent: boolean }
@@ -72,8 +98,223 @@ export type BriefingPublishResult =
 /** Stable owner key supplied at the Worker edge; Access `sub` will replace the local placeholder. */
 export type UserId = string;
 
-/** Singleton durable owner of preference state. Future conversations and briefings share this Agent. */
-export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
+/** Singleton durable owner of briefing preferences, generation, and grounded chat. */
+export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
+  /** Retains a bounded personal transcript while Agent-managed SQLite handles stream recovery. */
+  maxPersistedMessages = 40;
+
+  /** Responds to one story-grounded chat turn while the Agent persists its transcript. */
+  async onChatMessage(
+    _onFinish: Parameters<AIChatAgent['onChatMessage']>[0],
+    options?: Parameters<AIChatAgent['onChatMessage']>[1],
+  ): Promise<Response> {
+    const request = parseChatRequest(options?.body);
+
+    if (request === null)
+      return new Response(
+        'Choose a saved conversation before asking a follow-up.',
+      );
+
+    const session = this.readChatSession(request.sessionId, 'single-user');
+
+    if (session === undefined)
+      return new Response(
+        'That saved conversation is unavailable. Choose another story and try again.',
+      );
+
+    const question = latestChatQuestion(this.messages);
+
+    if (question === null)
+      return new Response('Your question was not available. Please try again.');
+
+    this.appendChatMessage(session.id, question, 'single-user');
+    const context = buildBriefingChatContext(
+      this.readBriefingByRun(session.briefingRunId, 'single-user'),
+      session.storyId,
+    );
+
+    if (context === null)
+      return new Response(
+        'The story linked to this conversation is no longer available. Choose another story and try again.',
+      );
+
+    if (this.env.AI === undefined)
+      return new Response('Workers AI is not configured for this Worker.', {
+        status: 503,
+      });
+
+    const response = await this.env.AI.run(briefingChatModel, {
+      max_tokens: 650,
+      messages: [
+        { role: 'system', content: context.system },
+        ...this.readChatMessages(session.id, 'single-user', 12).map(
+          (message) => ({
+            role: message.role,
+            content: message.content,
+          }),
+        ),
+      ],
+      temperature: 0,
+    });
+    const answer = parseChatModelResponse(response);
+    const unlabelledContent =
+      answer ??
+      'I could not produce a grounded answer from the selected briefing story. Please try again.';
+    const content = ensureChatCitation(unlabelledContent, context.item);
+
+    this.appendChatMessage(
+      session.id,
+      { id: crypto.randomUUID(), role: 'assistant', content },
+      'single-user',
+    );
+
+    return new Response(content);
+  }
+
+  /** Creates a durable conversation after verifying that its cited story belongs to the user. */
+  createChatSession(
+    briefingRunId: string,
+    storyId: string,
+    userId: UserId,
+  ): ChatSession | undefined {
+    this.ensureSchema();
+    const briefing = this.readBriefingByRun(briefingRunId, userId);
+    const story = briefing?.items.find((item) => item.id === storyId);
+
+    if (briefing === undefined || story === undefined) return undefined;
+
+    const session = chatSessionSchema.parse({
+      id: crypto.randomUUID(),
+      briefingRunId,
+      briefingDate: briefing.date,
+      storyId,
+      storyHeadline: story.headline,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    this.ctx.storage.sql.exec(
+      `INSERT INTO chat_sessions (id, user_id, briefing_run_id, briefing_date, story_id, story_headline, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id,
+      userId,
+      session.briefingRunId,
+      session.briefingDate,
+      session.storyId,
+      session.storyHeadline,
+      session.createdAt,
+      session.updatedAt,
+    );
+
+    return session;
+  }
+
+  /** Lists retained conversations across current and historically archived briefing editions. */
+  listChatSessions(userId: UserId): ChatSession[] {
+    this.ensureSchema();
+
+    return [
+      ...this.ctx.storage.sql.exec<ChatSession>(
+        `SELECT id, briefing_run_id AS briefingRunId, briefing_date AS briefingDate, story_id AS storyId, story_headline AS storyHeadline, created_at AS createdAt, updated_at AS updatedAt FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200`,
+        userId,
+      ),
+    ].map((row) => chatSessionSchema.parse(row));
+  }
+
+  /** Reads durable messages for one owner-scoped conversation, without exposing another user's history. */
+  readChatSessionMessages(
+    sessionId: string,
+    userId: UserId,
+  ): z.infer<typeof chatSessionMessagesSchema> | undefined {
+    const session = this.readChatSession(sessionId, userId);
+
+    if (session === undefined) return undefined;
+
+    return chatSessionMessagesSchema.parse({
+      session,
+      messages: this.readChatMessages(sessionId, userId),
+    });
+  }
+
+  /** Deletes one owner-scoped conversation and every durable turn it contains. */
+  deleteChatSession(sessionId: string, userId: UserId): boolean {
+    this.ensureSchema();
+
+    return this.ctx.storage.transactionSync(() => {
+      const exists = [
+        ...this.ctx.storage.sql.exec<{ id: string }>(
+          `SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?`,
+          sessionId,
+          userId,
+        ),
+      ][0];
+
+      if (exists === undefined) return false;
+
+      this.ctx.storage.sql.exec(
+        `DELETE FROM chat_messages WHERE session_id = ?`,
+        sessionId,
+      );
+      this.ctx.storage.sql.exec(
+        `DELETE FROM chat_sessions WHERE id = ? AND user_id = ?`,
+        sessionId,
+        userId,
+      );
+
+      return true;
+    });
+  }
+
+  /** Reserves one active manual run using the saved timezone and current preferences. */
+  reserveManualBriefingRun(
+    userId: UserId,
+    now = new Date(),
+  ): ManualBriefingRunResult {
+    this.ensureSchema();
+    const stored = this.readStoredPreferences(userId);
+
+    if (!stored.configured)
+      return {
+        ok: false,
+        error: 'Save preferences before starting a briefing.',
+      };
+
+    if (!stored.preferences.topics.some((topic) => topic.enabled))
+      return {
+        ok: false,
+        error: 'Enable at least one topic before generating a briefing.',
+      };
+    this.expireBriefingRuns(userId, now);
+    const date = localDate(now, stored.preferences.global.schedule.timezone);
+
+    return this.ctx.storage.transactionSync(() => {
+      const active = [
+        ...this.ctx.storage.sql.exec<{ id: string }>(
+          `SELECT id FROM briefing_runs WHERE user_id = ? AND status = 'running' ORDER BY created_at ASC LIMIT 1`,
+          userId,
+        ),
+      ][0];
+
+      if (active !== undefined)
+        return { ok: true, runId: active.id, date, created: false };
+      const runId = crypto.randomUUID();
+      const snapshot = briefingCollectionSnapshotSchema.parse({
+        runId,
+        preferenceRevision: stored.preferences.revision,
+        preferences: stored.preferences,
+        budget: defaultBriefingCollectionBudget,
+      });
+
+      this.ctx.storage.sql.exec(
+        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at) VALUES (?, ?, ?, 'running', ?, datetime('now'))`,
+        runId,
+        userId,
+        stored.preferences.revision,
+        JSON.stringify(snapshot),
+      );
+
+      return { ok: true, runId, date, created: true };
+    });
+  }
   /** Reads the validated preferences document without creating a first-run record. */
   readPreferences(userId: UserId): StoredPreferences {
     this.ensureSchema();
@@ -350,8 +591,11 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
         runId,
       );
       this.ctx.storage.sql.exec(
-        `UPDATE briefing_runs SET collection_failures = ? WHERE id = ?`,
+        `UPDATE briefing_runs SET collection_failures = ?, collection_diagnostics = ? WHERE id = ?`,
         JSON.stringify(collection.failures),
+        collection.diagnostics === undefined
+          ? null
+          : JSON.stringify(collection.diagnostics),
         runId,
       );
 
@@ -413,6 +657,30 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
       candidates,
       failures: JSON.parse(run.collection_failures) as unknown,
     });
+  }
+
+  /** Reads retained metadata without restoring temporary article text or exposing another owner's run. */
+  readBriefingDiagnostics(
+    runId: string,
+    userId: UserId,
+  ): BriefingDiagnostics | null | undefined {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const row = [
+      ...this.ctx.storage.sql.exec<{ collection_diagnostics: string | null }>(
+        `SELECT collection_diagnostics FROM briefing_runs WHERE id = ? AND user_id = ?`,
+        runId,
+        userId,
+      ),
+    ][0];
+
+    if (row === undefined) return undefined;
+
+    return row.collection_diagnostics === null
+      ? null
+      : briefingDiagnosticsSchema.parse(
+          JSON.parse(row.collection_diagnostics) as unknown,
+        );
   }
 
   /** Composes one grounded in-memory draft from an active run without publishing it. */
@@ -541,13 +809,25 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     });
   }
 
-  /** Marks an active run failed and removes its temporary evidence. */
-  failBriefingRun(runId: string, userId: UserId): boolean {
+  /** Marks an active run failed, retains its reason, and removes temporary evidence. */
+  failBriefingRun(
+    runId: string,
+    userId: UserId,
+    failureMessage = 'The briefing could not be completed.',
+  ): boolean {
     this.ensureSchema();
+    const parsedMessage =
+      briefingRunStatusResponseSchema.shape.failureMessage.safeParse(
+        failureMessage,
+      );
+    const message = parsedMessage.success
+      ? parsedMessage.data
+      : 'The briefing could not be completed.';
 
     return this.ctx.storage.transactionSync(() => {
       const result = this.ctx.storage.sql.exec(
-        `UPDATE briefing_runs SET status = 'failed' WHERE id = ? AND user_id = ? AND status = 'running'`,
+        `UPDATE briefing_runs SET status = 'failed', failure_message = ? WHERE id = ? AND user_id = ? AND status = 'running'`,
+        message,
         runId,
         userId,
       );
@@ -563,13 +843,95 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     });
   }
 
-  /** Returns the newest dated published briefing for Today. */
-  readLatestBriefing(userId: UserId): Briefing | undefined {
+  /** Returns the briefing whose date is current in the saved preference timezone. */
+  readTodayBriefing(userId: UserId, now = new Date()): Briefing | undefined {
+    this.ensureSchema();
+    const preferences = this.readStoredPreferences(userId);
+
+    if (!preferences.configured) return undefined;
+
+    return this.readBriefingForDate(
+      userId,
+      localDate(now, preferences.preferences.global.schedule.timezone),
+    );
+  }
+
+  /** Closes abandoned reservations after the bounded workflow execution window. */
+  expireBriefingRuns(userId: UserId, now = new Date()): void {
+    this.ensureSchema();
+    const cutoff = new Date(now.getTime() - 30 * 60_000).toISOString();
+    const rows = [
+      ...this.ctx.storage.sql.exec<{ id: string }>(
+        `SELECT id FROM briefing_runs WHERE user_id = ? AND status = 'running' AND julianday(created_at) < julianday(?)`,
+        userId,
+        cutoff,
+      ),
+    ];
+
+    for (const row of rows)
+      this.failBriefingRun(
+        row.id,
+        userId,
+        'Generation timed out. Your previous briefings are safe; you can try again.',
+      );
+  }
+
+  /** Reads the latest run so navigation and new tabs can recover generation state. */
+  readLatestBriefingRun(userId: UserId): BriefingRunStatusResponse | undefined {
+    this.ensureSchema();
+    this.expireBriefingRuns(userId);
+    const row = [
+      ...this.ctx.storage.sql.exec<{ id: string }>(
+        `SELECT id FROM briefing_runs WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+        userId,
+      ),
+    ][0];
+
+    return row === undefined
+      ? undefined
+      : this.readBriefingRunStatus(row.id, userId);
+  }
+
+  /** Reads a user's run state and persisted collection failures for client polling. */
+  readBriefingRunStatus(
+    runId: string,
+    userId: UserId,
+  ): BriefingRunStatusResponse | undefined {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const row = [
+      ...this.ctx.storage.sql.exec<{
+        status: 'running' | 'published' | 'failed';
+        failure_message: string | null;
+        collection_failures: string | null;
+      }>(
+        `SELECT status, failure_message, collection_failures FROM briefing_runs WHERE id = ? AND user_id = ?`,
+        runId,
+        userId,
+      ),
+    ][0];
+
+    if (row === undefined) return undefined;
+
+    return briefingRunStatusResponseSchema.parse({
+      runId,
+      status: row.status,
+      failureMessage: row.failure_message,
+      collectionFailures:
+        row.collection_failures === null
+          ? []
+          : (JSON.parse(row.collection_failures) as unknown),
+    });
+  }
+
+  /** Returns one exact dated briefing without falling back to an earlier publication. */
+  readBriefingForDate(userId: UserId, date: string): Briefing | undefined {
     this.ensureSchema();
     const row = [
       ...this.ctx.storage.sql.exec<{ document: string }>(
-        `SELECT document FROM briefings WHERE user_id = ? ORDER BY date DESC, published_at DESC LIMIT 1`,
+        `SELECT document FROM briefings WHERE user_id = ? AND date = ? ORDER BY published_at DESC LIMIT 1`,
         userId,
+        date,
       ),
     ][0];
 
@@ -623,11 +985,9 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     };
   }
 
-  /** Reads one stored briefing only inside an already-open storage transaction. */
-  private readBriefingByRun(
-    runId: string,
-    userId: UserId,
-  ): Briefing | undefined {
+  /** Reads one immutable publication scoped to its owner. */
+  readBriefingByRun(runId: string, userId: UserId): Briefing | undefined {
+    this.ensureSchema();
     const row = [
       ...this.ctx.storage.sql.exec<{ document: string }>(
         `SELECT document FROM briefings WHERE run_id = ? AND user_id = ?`,
@@ -718,6 +1078,89 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
     return { ...preferences, topics };
   }
 
+  /** Reads a single durable session after confirming it belongs to the supplied user. */
+  private readChatSession(
+    sessionId: string,
+    userId: UserId,
+  ): ChatSession | undefined {
+    this.ensureSchema();
+    const row = [
+      ...this.ctx.storage.sql.exec<ChatSession>(
+        `SELECT id, briefing_run_id AS briefingRunId, briefing_date AS briefingDate, story_id AS storyId, story_headline AS storyHeadline, created_at AS createdAt, updated_at AS updatedAt FROM chat_sessions WHERE id = ? AND user_id = ?`,
+        sessionId,
+        userId,
+      ),
+    ][0];
+
+    return row === undefined ? undefined : chatSessionSchema.parse(row);
+  }
+
+  /** Reads the bounded, session-scoped model history in chronological order. */
+  private readChatMessages(
+    sessionId: string,
+    userId: UserId,
+    limit = 200,
+  ): ChatMessage[] {
+    this.ensureSchema();
+    const belongsToUser = [
+      ...this.ctx.storage.sql.exec<{ id: string }>(
+        `SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?`,
+        sessionId,
+        userId,
+      ),
+    ][0];
+
+    if (belongsToUser === undefined) return [];
+
+    const maximum = limit === 12 ? 12 : 200;
+
+    return [
+      ...this.ctx.storage.sql.exec<ChatMessage>(
+        `SELECT id, role, content, created_at AS createdAt FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC LIMIT ${String(maximum)}`,
+        sessionId,
+      ),
+    ].map((row) => chatMessageSchema.parse(row));
+  }
+
+  /** Appends an idempotent user or Agent turn and advances its session in archive ordering. */
+  private appendChatMessage(
+    sessionId: string,
+    message: Pick<ChatMessage, 'id' | 'role' | 'content'>,
+    userId: UserId,
+  ): void {
+    this.ensureSchema();
+    const parsed = chatMessageSchema.parse({
+      ...message,
+      createdAt: new Date().toISOString(),
+    });
+
+    this.ctx.storage.transactionSync(() => {
+      const belongsToUser = [
+        ...this.ctx.storage.sql.exec<{ id: string }>(
+          `SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?`,
+          sessionId,
+          userId,
+        ),
+      ][0];
+
+      if (belongsToUser === undefined) return;
+
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO chat_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)`,
+        parsed.id,
+        sessionId,
+        parsed.role,
+        parsed.content,
+        parsed.createdAt,
+      );
+      this.ctx.storage.sql.exec(
+        `UPDATE chat_sessions SET updated_at = ? WHERE id = ?`,
+        parsed.createdAt,
+        sessionId,
+      );
+    });
+  }
+
   /** Applies idempotent, versioned schema migrations before every public operation. */
   private ensureSchema(): void {
     this.ctx.storage.transactionSync(() => {
@@ -781,21 +1224,114 @@ export class PersonalBriefingAgent extends Agent<PreferencesAgentEnv> {
         );
       }
 
-      if (hasMigration(5)) return;
+      if (!hasMigration(5)) {
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE briefing_runs ADD COLUMN collection_snapshot TEXT`,
+        );
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE briefing_runs ADD COLUMN collection_failures TEXT`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE briefing_candidates (run_id TEXT NOT NULL, source_url TEXT NOT NULL, topic_ids TEXT NOT NULL, story TEXT NOT NULL, evidence TEXT NOT NULL, evidence_tier TEXT NOT NULL CHECK (evidence_tier IN ('article', 'description', 'headline-only')), created_at TEXT NOT NULL, PRIMARY KEY (run_id, source_url), FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (5, datetime('now'))`,
+        );
+      }
+
+      if (!hasMigration(6)) {
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE briefing_runs ADD COLUMN failure_message TEXT`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (6, datetime('now'))`,
+        );
+      }
+
+      if (!hasMigration(7)) {
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE briefing_runs ADD COLUMN collection_diagnostics TEXT`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (7, datetime('now'))`,
+        );
+      }
+
+      if (hasMigration(8)) return;
       this.ctx.storage.sql.exec(
-        `ALTER TABLE briefing_runs ADD COLUMN collection_snapshot TEXT`,
+        `CREATE TABLE chat_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, briefing_run_id TEXT NOT NULL, briefing_date TEXT NOT NULL, story_id TEXT NOT NULL, story_headline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (briefing_run_id) REFERENCES briefings(run_id))`,
       );
       this.ctx.storage.sql.exec(
-        `ALTER TABLE briefing_runs ADD COLUMN collection_failures TEXT`,
+        `CREATE INDEX chat_sessions_latest_by_user ON chat_sessions (user_id, updated_at DESC)`,
       );
       this.ctx.storage.sql.exec(
-        `CREATE TABLE briefing_candidates (run_id TEXT NOT NULL, source_url TEXT NOT NULL, topic_ids TEXT NOT NULL, story TEXT NOT NULL, evidence TEXT NOT NULL, evidence_tier TEXT NOT NULL CHECK (evidence_tier IN ('article', 'description', 'headline-only')), created_at TEXT NOT NULL, PRIMARY KEY (run_id, source_url), FOREIGN KEY (run_id) REFERENCES briefing_runs(id))`,
+        `CREATE TABLE chat_messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES chat_sessions(id))`,
       );
       this.ctx.storage.sql.exec(
-        `INSERT INTO schema_migrations (version, applied_at) VALUES (5, datetime('now'))`,
+        `CREATE INDEX chat_messages_by_session ON chat_messages (session_id, created_at ASC)`,
+      );
+      this.ctx.storage.sql.exec(
+        `INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'))`,
       );
     });
   }
+}
+
+/** Extracts the latest bounded user turn supplied by the Agent chat transport. */
+function latestChatQuestion(
+  value: unknown,
+): Pick<ChatMessage, 'id' | 'role' | 'content'> | null {
+  const messages = z.array(z.unknown()).safeParse(value);
+  const message = z
+    .object({
+      id: z.string().trim().min(1).max(200),
+      role: z.literal('user'),
+      parts: z.array(
+        z.looseObject({ type: z.literal('text'), text: z.string() }),
+      ),
+    })
+    .safeParse(messages.success ? messages.data.at(-1) : undefined);
+
+  if (!message.success) return null;
+
+  const content = message.data.parts
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+
+  if (content === '') return null;
+
+  const parsed = chatMessageSchema.safeParse({
+    id: message.data.id,
+    role: 'user',
+    content,
+    createdAt: new Date().toISOString(),
+  });
+
+  return parsed.success
+    ? {
+        id: parsed.data.id,
+        role: parsed.data.role,
+        content: parsed.data.content,
+      }
+    : null;
+}
+
+function localDate(now: Date, timezone: string): string {
+  const values = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const year = values.find((part) => part.type === 'year')?.value;
+  const month = values.find((part) => part.type === 'month')?.value;
+  const day = values.find((part) => part.type === 'day')?.value;
+
+  if (year === undefined || month === undefined || day === undefined)
+    throw new Error('Timezone formatting did not return a complete date.');
+
+  return `${year}-${month}-${day}`;
 }
 
 /** Produces a bounded local diagnostic without persisting a model response. */

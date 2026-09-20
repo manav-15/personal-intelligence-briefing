@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { routeAgentRequest } from 'agents';
+import { chatsRoutes } from './routes/chats';
 import { feasibilityRoutes } from './routes/feasibility';
 import { briefingsRoutes } from './routes/briefings';
 import { healthHandler } from './routes/health';
@@ -7,6 +9,7 @@ import { preferencesRoutes } from './routes/preferences';
 import { allowMethods, noStore, type HttpEnv } from './routes/policy';
 
 export { PersonalBriefingAgent } from './preferences-agent';
+export { BriefingWorkflow } from './briefing-workflow';
 export { SearxngContainer } from './searxng-container';
 
 /** Worker API composition; Static Assets owns frontend routing. */
@@ -16,8 +19,14 @@ app.all('/api/health', allowMethods('GET'), noStore);
 app.get('/api/health', healthHandler);
 app.route('/api/preferences', preferencesRoutes);
 app.route('/api/briefings', briefingsRoutes);
+app.route('/api/chats', chatsRoutes);
 app.route('/api/inspection', inspectionRoutes);
 app.route('/api/feasibility', feasibilityRoutes);
+app.all('/agents/*', async (c) => {
+  const response = await routeAgentRequest(c.req.raw, c.env);
+
+  return response ?? c.json({ error: 'Agent route not found.' }, 404);
+});
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((_error, c) => c.json({ error: 'Internal server error' }, 500));
 

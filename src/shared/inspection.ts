@@ -15,6 +15,12 @@ export const descriptionSchema = z.object({
   observedAt: z.iso.datetime(),
 });
 
+/** A trustworthy publisher-supplied publication date recovered from article markup. */
+export const publisherDateSchema = z.object({
+  publishedAt: z.iso.datetime(),
+  provenance: z.enum(['publisher-jsonld', 'publisher-meta', 'publisher-time']),
+});
+
 /** Runtime-validated normalized story contract used in inspector requests/results. */
 export const storyCandidateSchema = z.object({
   id: z.string().min(1).max(2000),
@@ -28,7 +34,15 @@ export const storyCandidateSchema = z.object({
   discovery: discoveryProviderSchema,
   description: descriptionSchema.optional(),
   engines: z.array(z.string()).optional(),
-  dateProvenance: z.enum(['search-metadata', 'unknown']).optional(),
+  dateProvenance: z
+    .enum([
+      'search-metadata',
+      'publisher-jsonld',
+      'publisher-meta',
+      'publisher-time',
+      'unknown',
+    ])
+    .optional(),
 });
 
 /** Explicit collection failures, including partial upstream engine failures. */
@@ -56,8 +70,14 @@ export const evidenceSchema = z.discriminatedUnion('status', [
     provenance: z.literal('publisher-page'),
     pageTitle: z.string(),
     extraction: z.enum(['article-region', 'paragraphs']),
+    publicationDate: publisherDateSchema.optional(),
   }),
-  z.object({ status: z.literal('unavailable'), reason: z.string() }),
+  z.object({
+    status: z.literal('unavailable'),
+    reason: z.string(),
+    publicationDate: publisherDateSchema.optional(),
+    pageKind: z.literal('index-or-timeline').optional(),
+  }),
 ]);
 
 /** User-controlled bounded keyword query; this is not natural-language interpretation. */

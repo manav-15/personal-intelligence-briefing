@@ -1,8 +1,10 @@
 import type { MiddlewareHandler } from 'hono';
 import type { PreferencesAgentEnv } from '../preferences-agent';
+import type { BriefingWorkflowParams } from '../briefing-workflow';
 
 /** Optional local diagnostic bindings; production enables neither diagnostic flag. */
 export type Env = Partial<PreferencesAgentEnv> & {
+  BRIEFING_WORKFLOW?: Workflow<BriefingWorkflowParams>;
   INSPECTION_ENABLED?: string;
   SEARXNG_BASE_URL?: string;
 };

@@ -17,7 +17,7 @@ describe('SearXNG provider interface', () => {
     ['month', 31],
     ['year', 365],
   ] as const)(
-    'filters %s by concrete inclusive dates before capping',
+    'sends %s to SearXNG and enforces concrete inclusive dates before capping',
     async (timeRange, days) => {
       const now = Date.parse('2026-09-18T08:00:00Z');
 
@@ -43,7 +43,7 @@ describe('SearXNG provider interface', () => {
                 : typeof url === 'string'
                   ? url
                   : url.url,
-            ).not.toContain('time_range');
+            ).toContain(`time_range=${timeRange}`);
 
             return Promise.resolve(
               Response.json({

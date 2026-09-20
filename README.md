@@ -124,10 +124,13 @@ return no results; engines may still supply old or undated leads. Warnings do
 not constitute a publication freshness filter. Extraction can include footer
 and related-story text, so review it before trusting future summaries.
 
-Filtered searches now query all three engines and apply concrete date ranges
-locally: previous 24 hours, 31 days, or 365 days. Undated/future leads are
-excluded; the UI shows range boundaries and excluded counts. Dates come from
-search metadata, and filtering only covers the returned candidate set.
+Filtered inspection searches send SearXNG `time_range=day`, `month`, or `year`
+and then apply concrete server-side date ranges: previous 24 hours, 31 days,
+or 365 days. Undated/future leads are excluded; the UI shows range boundaries
+and excluded counts. Daily briefing collection deliberately queries configured
+SearXNG news engines without that parameter and applies the same server-side
+freshness gate, avoiding a Bing-only path when other engines do not implement
+upstream time filtering.
 
 `INSPECTION_ENABLED=true` opts into local diagnostic routes; keep it unset in
 deployment. `.dev.vars` is ignored. SearXNG stays on loopback port 8080. Stop it
@@ -194,3 +197,39 @@ retrieve an article.
 Open work, including stronger readable-content extraction, source-quality
 controls, fair provider scheduling, and evidence refreshes for deeper chat, is
 tracked in the [improvement backlog](docs/data-pipeline.md#9-improvement-backlog).
+
+## Reading and generating briefings locally
+
+Open Today and choose **Generate briefing** (or **Refresh briefing**). Saved
+preferences must contain an enabled topic. The previous edition stays readable
+while generation runs; reloading or returning to Today restores progress.
+Archive opens complete, dated editions and their sources. An incomplete edition
+shows its coverage explanation without filling missing topics with weak stories.
+
+The local Worker exposes `/api/briefings/current-run`, `/api/briefings/runs/:runId`,
+and `/api/briefings/archive/:runId` alongside Today, archive listing, and generation.
+A failed load has a retry action. Abandoned generation reservations expire after
+30 minutes; confirmed stopped Workflows reconcile sooner. This does not enable
+scheduled generation or deploy the application. Cloudflare Access remains
+DEPLOY-02 in the [pipeline backlog](docs/data-pipeline.md#9-improvement-backlog).
+
+For local collection debugging, enable `PREFERENCES_DIAGNOSTICS_ENABLED=true`
+and read `/api/briefings/runs/:runId/diagnostics`. New completed collections retain
+compact query counts and candidate metadata after publication or failure, without
+article/snippet text. The response includes published citation URLs for comparison.
+Old runs return null metadata. Leave this diagnostic binding disabled in deployment.
+
+## Asking follow-up questions locally
+
+Open **Chat** after a briefing exists. Select a story, then start a saved
+conversation. Each session stores its briefing run, briefing date, and story
+identity, so it can be reopened after reload and remains in the Chat library
+when its edition becomes historical. The Agent answers only from that saved
+briefing item's summary, stored update note, and listed citations. If no edition
+exists for the current local day, Chat opens the newest retained edition.
+**Delete conversation** permanently removes that session and its messages.
+
+The initial chat slice does not retrieve new articles or run broad search. It
+does not claim access to a full article when the saved briefing has only a
+limited source description. Publisher-evidence refresh is tracked in the
+[pipeline backlog](docs/data-pipeline.md#9-improvement-backlog).

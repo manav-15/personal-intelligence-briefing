@@ -15,9 +15,9 @@ import type {
 export const briefingCompositionModel =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 /** Versioned model instruction set retained in briefing provenance. */
-export const briefingCompositionPromptVersion = '2026-09-19.2';
+export const briefingCompositionPromptVersion = '2026-09-19.4';
 /** Versioned deterministic evidence policy retained in briefing provenance. */
-export const briefingEvidencePolicyVersion = '2026-09-19.1';
+export const briefingEvidencePolicyVersion = '2026-09-19.2';
 
 const maxPriorItems = 12;
 const maxPriorItemCharacters = 500;
@@ -82,7 +82,7 @@ const modelItemSchema = z.strictObject({
   candidateIds: z.array(z.string().min(1)).min(1).max(10),
   presentationTopicId: z.string().min(1).max(64),
   headline: z.string().trim().min(1).max(500),
-  summary: z.string().trim().min(1).max(1_600),
+  summary: z.string().trim().max(1_600),
   assessment: assessmentSchema,
   coverageKind: z.enum(['new', 'substantial-update']),
   previousItems: z
@@ -90,7 +90,7 @@ const modelItemSchema = z.strictObject({
       z.strictObject({ runId: z.uuid(), itemId: z.string().min(1).max(200) }),
     )
     .max(maxPriorItems),
-  whatChanged: z.string().trim().min(1).max(1_000).nullable(),
+  whatChanged: z.string().trim().max(1_000).nullable(),
 });
 
 const modelResponseSchema = z.strictObject({
@@ -197,7 +197,7 @@ export function buildBriefingCompositionRequest(
   const topicIds = context.topics.map((topic) => topic.id);
 
   return {
-    max_tokens: 1_800,
+    max_tokens: Math.min(6_000, 800 + context.reading.maxStories * 450),
     temperature: 0,
     response_format: {
       type: 'json_schema' as const,
@@ -225,7 +225,9 @@ const compositionSystemPrompt = [
   'Select only supplied candidate IDs.',
   'Article evidence supports concise grounded factual claims.',
   'Description evidence supports only a clearly limited summary; headline-only evidence is unavailable for selection.',
+  'Aim for targetMinutes * 200 words across headlines, summaries, and change explanations; never exceed that budget. Prefer fewer strong stories to padding. Meet minStories only when evidence supports them.',
   'Do not pad the briefing. Respect supplied topic intent, exclusions, source policy, and summary settings.',
+  'Every selected item needs a non-empty grounded summary. Omit any item you cannot summarize.',
   'Group only closely related candidates.',
   'For every item, first assess three independent dimensions from supplied evidence and context:',
   'topicFit: 0=no match or excluded, 1=incidental, 2=tangential, 3=relevant, 4=direct fit, 5=core topic fit.',
@@ -236,6 +238,7 @@ const compositionSystemPrompt = [
   'Select only items whose calculated overall score is at least 70.',
   'The score never overrides exclusions, evidence limits, source policy, or prior-coverage requirements.',
   'Give a short reason that explains the component scores using supplied evidence and context.',
+  'Do not repeat prior coverage as new; an unchanged story has novelty 0 and must be omitted. Matching prior headlines require a supported substantial update.',
   'Mark substantial-update only with supplied prior coverage references and a concrete supported whatChanged statement.',
   'Return only JSON matching the schema.',
 ].join(' ');
@@ -439,17 +442,48 @@ function materializeBriefing(
   }
 
   if (items.length === 0)
-    throw new Error('No candidates met the relevance threshold.');
+    throw new Error(
+      'No new stories met your preferences with enough supporting evidence.',
+    );
 
   if (items.length > input.reading.maxStories)
     throw new Error('Model exceeded the story budget.');
 
   const limitations = input.collectionLimitations
-    .slice(0, 49)
-    .map((message) => ({
-      code: 'collection',
+    .filter((message, index, all) => all.indexOf(message) === index)
+    .slice(0, 47)
+    .map((message, index) => ({
+      code: `collection-${String(index)}`,
       message,
     }));
+  const words = items.reduce(
+    (total, item) =>
+      total +
+      `${item.headline} ${item.summary} ${item.update?.whatChanged ?? ''}`
+        .trim()
+        .split(/\s+/u).length,
+    0,
+  );
+
+  if (words > input.reading.targetMinutes * 220)
+    throw new Error(
+      'The draft exceeded your reading budget. Please try again.',
+    );
+
+  if (items.length < input.reading.minStories)
+    limitations.push({
+      code: 'short-edition',
+      message:
+        'Fewer strong stories were available than requested. This edition has not been padded.',
+    });
+  const covered = new Set(items.flatMap((item) => item.topicIds));
+  const missing = input.topics.filter((topic) => !covered.has(topic.id));
+
+  if (missing.length > 0)
+    limitations.push({
+      code: 'topic-coverage',
+      message: `No eligible stories were selected for ${missing.map((topic) => topic.name).join(', ')}.`,
+    });
   const hasDescriptionOnlyItem = items.some((item) =>
     item.citations.every((citation) => citation.evidenceTier === 'description'),
   );
@@ -466,6 +500,9 @@ function materializeBriefing(
     runId: input.runId,
     date: input.date,
     preferenceRevision: input.preferenceRevision,
+    topicNames: Object.fromEntries(
+      input.topics.map((topic) => [topic.id, topic.name]),
+    ),
     completeness: limitations.length === 0 ? 'complete' : 'partial',
     limitations,
     items,
@@ -489,7 +526,22 @@ function materializeItem(
 ): BriefingItem | undefined {
   const score = relevanceScore(decision);
 
-  if (score < relevanceThreshold) return undefined;
+  if (
+    !decision.summary ||
+    score < relevanceThreshold ||
+    decision.assessment.novelty === 0
+  )
+    return undefined;
+
+  if (
+    decision.coverageKind === 'new' &&
+    priorCoverage.some(
+      (prior) =>
+        normalizeHeadline(prior.headline) ===
+        normalizeHeadline(decision.headline),
+    )
+  )
+    return undefined;
   const candidateValues = decision.candidateIds.map((id) => candidates.get(id));
 
   if (candidateValues.some((candidate) => candidate === undefined))
@@ -549,13 +601,13 @@ function materializeUpdate(
   priorCoverage: BriefingPriorItem[],
 ) {
   if (decision.coverageKind === 'new') {
-    if (decision.previousItems.length > 0 || decision.whatChanged !== null)
+    if (decision.previousItems.length > 0 || hasChangeExplanation(decision))
       throw new Error('New coverage cannot claim a previous item.');
 
     return undefined;
   }
 
-  if (decision.previousItems.length === 0 || decision.whatChanged === null)
+  if (decision.previousItems.length === 0 || !hasChangeExplanation(decision))
     throw new Error(
       'A substantial update requires prior coverage and a change explanation.',
     );
@@ -574,6 +626,12 @@ function materializeUpdate(
     previousItems: decision.previousItems,
     whatChanged: decision.whatChanged,
   };
+}
+
+function hasChangeExplanation(
+  decision: z.infer<typeof modelItemSchema>,
+): decision is z.infer<typeof modelItemSchema> & { whatChanged: string } {
+  return decision.whatChanged !== null && decision.whatChanged.length > 0;
 }
 
 function newestDate(candidates: z.infer<typeof compositionCandidateSchema>[]) {
@@ -631,4 +689,11 @@ function compositionError(error: unknown): string {
     return error.message.slice(0, 1_000);
 
   return 'The composition model returned an invalid result.';
+}
+
+function normalizeHeadline(headline: string): string {
+  return headline
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }

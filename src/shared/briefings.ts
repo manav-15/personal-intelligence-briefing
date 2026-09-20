@@ -64,6 +64,7 @@ export const briefingSchema = z.strictObject({
   runId: z.uuid(),
   date: z.iso.date(),
   preferenceRevision: z.number().int().nonnegative(),
+  topicNames: z.record(z.string(), z.string().max(120)).optional(),
   completeness: z.enum(['complete', 'partial']),
   limitations: z.array(briefingLimitationSchema).max(50),
   items: z.array(briefingItemSchema).min(1).max(30),
@@ -86,6 +87,27 @@ export const briefingRunStatusSchema = z.enum([
   'published',
   'failed',
 ]);
+
+/** A persisted, attributable collection problem shown when a run cannot complete. */
+export const briefingRunFailureSchema = z.strictObject({
+  stage: z.enum(['discovery', 'evidence', 'budget']),
+  provider: z.enum(['searxng', 'google-news', 'gdelt']).nullable(),
+  message: z.string().trim().min(1).max(1_000),
+});
+
+/** Server-owned status for one manually requested briefing generation run. */
+export const briefingRunStatusResponseSchema = z.strictObject({
+  runId: z.uuid(),
+  status: briefingRunStatusSchema,
+  failureMessage: z.string().trim().min(1).max(1_000).nullable(),
+  collectionFailures: z.array(briefingRunFailureSchema).max(200),
+});
+
+/** Acknowledges a newly created or already-active manual briefing workflow. */
+export const briefingGenerationResponseSchema = z.strictObject({
+  runId: z.uuid(),
+  created: z.boolean(),
+});
 
 /** Creates one idempotent run snapshot before collection begins. */
 export const briefingRunInputSchema = z.strictObject({
@@ -111,3 +133,7 @@ export type BriefingItem = z.infer<typeof briefingItemSchema>;
 export type BriefingArchiveEntry = z.infer<typeof briefingArchiveEntrySchema>;
 /** Validated input for an idempotent briefing run. */
 export type BriefingRunInput = z.infer<typeof briefingRunInputSchema>;
+/** A safe-to-render status view for a manual generation run. */
+export type BriefingRunStatusResponse = z.infer<
+  typeof briefingRunStatusResponseSchema
+>;

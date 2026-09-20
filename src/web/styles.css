@@ -93,6 +93,142 @@ h2 {
   line-height: 1.6;
   margin: 0;
 }
+.chat-screen {
+  max-width: 1080px;
+  padding: 40px 0;
+}
+.chat-layout {
+  align-items: start;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(190px, 0.3fr) minmax(0, 1fr);
+}
+.chat-library {
+  background: #f5f7f0;
+  border: 1px solid #d6dbd0;
+  border-radius: 12px;
+  padding: 16px;
+}
+.chat-library > button {
+  font-size: 0.85rem;
+  margin-top: 12px;
+  width: 100%;
+}
+.chat-library p {
+  color: #52615b;
+  font-size: 0.85rem;
+}
+.chat-library ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.chat-library li button {
+  background: transparent;
+  border: 1px solid #d6dbd0;
+  color: #203b36;
+  text-align: left;
+  width: 100%;
+}
+.chat-library li button[aria-pressed='true'] {
+  background: #e0e8d9;
+  border-color: #748c66;
+}
+.chat-library li span,
+.chat-library li small {
+  display: block;
+}
+.chat-library li small {
+  color: #52615b;
+  margin-top: 5px;
+}
+.chat-story-picker {
+  max-width: 100%;
+  margin: 28px 0 12px;
+}
+.chat-story-picker select {
+  max-width: 100%;
+}
+.chat-sources {
+  border-left: 3px solid #748c66;
+  color: #52615b;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin: 20px 0;
+  padding: 4px 0 4px 18px;
+}
+.chat-sources ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.chat-transcript {
+  background: #fffef9;
+  border: 1px solid #d6dbd0;
+  border-radius: 12px;
+  margin: 24px 0;
+  min-height: 220px;
+  padding: 20px;
+}
+.chat-empty,
+.chat-status {
+  color: #52615b;
+  margin: 0;
+}
+.chat-message {
+  border-radius: 10px;
+  line-height: 1.65;
+  margin: 0 0 16px;
+  max-width: 92%;
+  padding: 14px 16px;
+  white-space: pre-wrap;
+}
+.chat-message:last-of-type {
+  margin-bottom: 0;
+}
+.chat-message p {
+  margin: 6px 0 0;
+}
+.chat-message-user {
+  background: #e0e8d9;
+  margin-left: auto;
+}
+.chat-message-assistant {
+  background: #eef1e6;
+}
+.chat-composer {
+  align-items: stretch;
+  display: block;
+}
+.chat-composer label {
+  width: 100%;
+}
+.chat-composer textarea {
+  background: #fff;
+  border: 1px solid #b8c4b5;
+  border-radius: 6px;
+  color: #203b36;
+  font: inherit;
+  min-height: 110px;
+  padding: 12px;
+  resize: vertical;
+  width: 100%;
+}
+.chat-composer > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+@media (max-width: 720px) {
+  .chat-layout {
+    grid-template-columns: 1fr;
+  }
+  .chat-library ul {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+}
 footer {
   color: #52615b;
   font-size: 0.8rem;
@@ -614,4 +750,210 @@ textarea {
   form .primary {
     margin-left: auto;
   }
+}
+
+/* A quiet reading surface for current and archived editions. */
+.today-screen,
+.briefing-screen {
+  max-width: 780px;
+  margin-inline: auto;
+}
+.briefing-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 28px;
+}
+.briefing-controls a {
+  font-size: 0.9rem;
+}
+.briefing-screen h1 {
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  margin-bottom: 16px;
+}
+.edition-meta {
+  color: #52615b;
+  display: flex;
+  gap: 12px;
+}
+.coverage-note,
+.briefing-feedback {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border-left: 3px solid #a1783e;
+  background: #f2ecdc;
+  border-radius: 0 8px 8px 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.coverage-note p {
+  margin: 4px 0 8px;
+}
+.coverage-note summary,
+.briefing-feedback summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 8px 0;
+}
+.topic-jumps {
+  gap: 8px;
+  border-bottom: 0;
+  padding-block: 16px 24px;
+}
+.topic-jumps a {
+  border: 1px solid #d6dbd0;
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+.briefing-items {
+  gap: 0;
+}
+.briefing-item {
+  border: 0;
+  border-top: 1px solid #d6dbd0;
+  border-radius: 0;
+  background: transparent;
+  padding: 32px 0;
+  scroll-margin-top: 24px;
+}
+.briefing-item h2 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  max-width: 36ch;
+}
+.briefing-item .story-summary {
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  max-width: 68ch;
+  margin: 18px 0;
+}
+.briefing-item .story-number {
+  color: #68786b;
+  font-size: 0.75rem;
+  margin-right: 10px;
+}
+.story-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  list-style: none;
+  padding: 0;
+}
+.story-sources li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.briefing-item .story-sources span {
+  font-size: 0.75rem;
+}
+.story-update {
+  padding: 16px 20px;
+  border-left: 3px solid #748c66;
+  background: #eef0e6;
+  line-height: 1.65;
+}
+.story-update p {
+  margin: 6px 0 12px;
+}
+.story-update div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.9rem;
+}
+.briefing-archive a {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  flex: 1;
+}
+.briefing-archive a strong {
+  font-size: 1.1rem;
+}
+.briefing-archive a:hover strong {
+  text-decoration: underline;
+}
+.edition-end {
+  border-top: 1px solid #d6dbd0;
+  padding-top: 24px;
+  line-height: 1.8;
+  color: #52615b;
+}
+.edition-end a {
+  display: block;
+}
+.briefing-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  line-height: 1.6;
+  padding: 16px 0;
+}
+.progress-dot {
+  flex: 0 0 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #748c66;
+}
+.reading-skeleton {
+  height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(
+    #eeeee5 0 15%,
+    transparent 15% 25%,
+    #eeeee5 25% 32%,
+    transparent 32% 42%,
+    #eeeee5 42% 49%,
+    transparent 49%
+  );
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #53734d;
+  outline-offset: 4px;
+}
+@media (max-width: 640px) {
+  .briefing-controls {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .briefing-item {
+    padding-block: 26px;
+  }
+  .briefing-item .story-summary {
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+  .briefing-archive li {
+    align-items: center;
+  }
+}
+.today-screen > .briefing-screen {
+  padding-top: 20px;
+}
+.coverage-note {
+  margin-block: 18px;
+  padding-block: 12px;
+}
+.topic-jumps {
+  padding-block: 8px 16px;
 }

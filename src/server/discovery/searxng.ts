@@ -43,12 +43,16 @@ function searchUrl(input: SearchInput, baseUrl: string): URL {
 
   if (!['http:', 'https:'].includes(url.protocol))
     throw new Error('Invalid SearXNG configuration.');
-  url.search = new URLSearchParams({
+  const parameters = new URLSearchParams({
     q: input.query,
     categories: 'news',
     language: 'en',
     format: 'json',
-  }).toString();
+  });
+
+  if (input.timeRange !== 'any') parameters.set('time_range', input.timeRange);
+
+  url.search = parameters.toString();
 
   return url;
 }

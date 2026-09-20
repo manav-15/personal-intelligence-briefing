@@ -16,6 +16,74 @@ const runId = 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee';
 const date = '2026-09-19';
 
 describe('briefing composition', () => {
+  it('does not resurface an unchanged prior headline as new coverage even with a high score', async () => {
+    const prior: BriefingPriorItem = {
+      runId: 'e61584be-72fd-4f78-b765-1c302ac57ab7',
+      itemId: 'old',
+      topicIds: ['ai'],
+      headline: 'Provider releases a new AI model',
+      summary: 'Already covered.',
+      publishedAt: '2026-09-19T00:00:00Z',
+    };
+
+    await expect(
+      composeBriefing(compositionInput([prior]), responseAi(validResponse())),
+    ).resolves.toMatchObject({
+      ok: false,
+      error:
+        'No new stories met your preferences with enough supporting evidence.',
+    });
+  });
+
+  it('deduplicates coverage warnings and snapshots friendly topic names', async () => {
+    const input = {
+      ...compositionInput(),
+      collectionLimitations: [
+        'Evidence collection was incomplete.',
+        'Evidence collection was incomplete.',
+      ],
+    };
+    const result = await composeBriefing(input, responseAi(validResponse()));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(
+      result.briefing.limitations.filter(
+        (item) => item.message === 'Evidence collection was incomplete.',
+      ),
+    ).toHaveLength(1);
+    expect(
+      new Set(result.briefing.limitations.map((item) => item.code)).size,
+    ).toBe(result.briefing.limitations.length);
+    expect(
+      result.briefing.limitations.some((item) => item.code === 'short-edition'),
+    ).toBe(true);
+    expect(result.briefing.topicNames?.ai).toBe(
+      examplePreferences.topics[0]?.name,
+    );
+  });
+
+  it('rejects a draft that exceeds the global reading budget', async () => {
+    const input = {
+      ...compositionInput(),
+      reading: { targetMinutes: 1, minStories: 1, maxStories: 10 },
+    };
+    const response = validResponse();
+
+    const first = response.items[0];
+
+    if (first === undefined) throw new Error('Missing fixture');
+    first.summary = 'word '.repeat(230).trim();
+    await expect(
+      composeBriefing(input, responseAi(response)),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'The draft exceeded your reading budget. Please try again.',
+    });
+    expect(
+      buildBriefingCompositionRequest(input).max_tokens,
+    ).toBeLessThanOrEqual(6_000);
+  });
+
   it('keeps source URLs out of the model request and materializes code-owned citations', async () => {
     const input = compositionInput();
     const request = buildBriefingCompositionRequest(input);
@@ -73,6 +141,61 @@ describe('briefing composition', () => {
     expect(result).toEqual({
       ok: false,
       error: 'Model referenced an unavailable candidate.',
+    });
+  });
+
+  it('treats an empty change explanation as absent for new coverage', async () => {
+    const response = {
+      ...validResponse(),
+      items: validResponse().items.map((item) => ({
+        ...item,
+        whatChanged: '',
+      })),
+    };
+
+    await expect(
+      composeBriefing(compositionInput(), responseAi(response)),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('omits a model item with an empty summary instead of failing the whole draft', async () => {
+    const empty = validResponse().items[0];
+    const valid = validResponse().items[0];
+
+    if (empty === undefined || valid === undefined)
+      throw new Error('Missing fixture');
+    const result = await composeBriefing(
+      compositionInput(),
+      responseAi({
+        items: [
+          { ...empty, summary: '' },
+          { ...valid, candidateIds: ['candidate-1'] },
+        ],
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      briefing: { items: [{ summary: valid.summary }] },
+    });
+  });
+
+  it('requires non-empty change explanation for a substantial update', async () => {
+    const response = {
+      ...validResponse(),
+      items: validResponse().items.map((item) => ({
+        ...item,
+        coverageKind: 'substantial-update',
+        whatChanged: '',
+      })),
+    };
+
+    await expect(
+      composeBriefing(compositionInput(), responseAi(response)),
+    ).resolves.toEqual({
+      ok: false,
+      error:
+        'A substantial update requires prior coverage and a change explanation.',
     });
   });
 
@@ -226,6 +349,7 @@ function snapshot(): BriefingCollectionSnapshot {
       maxResultsPerQuery: 8,
       maxCandidates: 36,
       maxEvidenceFetches: 12,
+      maxDateResolutionFetches: 6,
       maxProviderRetries: 0,
     },
   };

@@ -42,6 +42,29 @@ part of this record.
 - Publish partial briefings with an incomplete label. Retain briefings and chat
   until deletion; retain deduplication data for 90 days.
 
+## Implementation prompt: grounded chat foundation
+
+> the agent is not just an chat agent, it is briefing and chat - has both
+> capabilities. Work on the chat UI, test it, run it using UI/api calls validate
+> the output, and iterate till you think the result is satisfactory. Decide the
+> acceptance criteria before. Ask questions if needed for big decisions
+
+**Material coding prompt (2026-09-20):** Keep `PersonalBriefingAgent` as the
+single Durable Object owner and add AIChatAgent's persisted WebSocket chat
+transport. Scope every turn to a selected, owned briefing story; provide only
+the saved source-backed summary, update note, and code-owned citations to Llama
+3.3 70B; reject missing or malformed story context; do not expose broad search
+or model-generated links. Build the React chat UI, test deterministic grounding
+contracts, and run a local Worker/browser plus live Workers AI smoke request.
+
+**Outcome:** Implemented the selected-story chat UI, Agent-persisted history,
+source rendering, clear-conversation control, owned archive fallback, and agent
+route configuration. Live validation revealed duplicated tool-stream fragments
+with the first evidence-refresh implementation; replaced it with a direct,
+bounded Workers AI response from saved briefing context. The live answer was
+clean, scoped, and cited `[S1]`; publisher evidence refresh remains a tracked
+improvement.
+
 ## Implementation prompt: increment 1
 
 > Initialize Git locally and scaffold a single React + TypeScript + Vite
@@ -598,3 +621,215 @@ deterministic request-contract test.
 Refactored the three prior violations into focused helpers without changing
 their external behavior: SearXNG discovery, publisher URL safety, and the
 content-inspection story card. The complete validation gate passes.
+
+### Today API ownership and workflow retry boundary (2026-09-19)
+
+> How will the client get today's briefing - API does filtering or client is expected to do filtering. I think it is API responsibility.
+>
+> i have some reservations around the workflow retries - we need to be able to retry if it is unexpected error not related to API calls or parsing information. If worker failed due to some other infra reason, it sohuld be able to retry. Just note this down - we will come back to this later.
+
+**Outcome:** Updated the 4.4 contract: the API derives the current date from
+the saved preference timezone and returns only that date's briefing or `null`;
+the browser performs no briefing-date filtering. Added BRIEF-03 to the central
+backlog for a reviewed retry classification that permits safe infrastructure
+recovery without blindly repeating discovery or model calls after ambiguous
+external outcomes.
+
+### Begin the next briefing slice (2026-09-19)
+
+> Work on the next sloce
+
+**Outcome:** Implemented the first 4.4 sub-slice: Agent-owned Today selection.
+The Today API now derives the exact current date from the saved timezone and
+returns that date's briefing or `null`, while the browser client has no
+briefing-date filtering or latest-result fallback. Workflow launch remains
+separate pending the deferred retry-boundary design.
+
+### Manual Workflow generation and normal run status (2026-09-19)
+
+> I need **manual end-to-end briefing generation**. It will make the existing
+> collection and composition work usable without adding scheduling yet.
+
+**Material coding prompt:** Add the Agent-owned active-run reservation,
+Cloudflare Workflow binding and durable collect/compose/publish/fail stages,
+normal manual-generate API, bounded retry policy, Today control, and
+deterministic tests. Keep the existing same-origin policy, explicit JSON method
+handling, and no-store behavior.
+
+**Outcome:** Added the configured `BriefingWorkflow`, idempotent active-run
+reservation, manual generation endpoint, and a Today control. Collection and
+composition have zero automatic retries; publication has bounded idempotent
+retries. The Workflow uses local SearXNG when `SEARXNG_BASE_URL` is configured
+and uses the private Container in deployment.
+
+### Persisted run failures and client polling (2026-09-19)
+
+> okay work on expose these persisted failure reasons in the run-status UI/API,
+> and then start the searXNG container
+>
+> Why not just have a normal API for checking run status instead of diagnostic
+> only. And then client polls till it finds it in a terminal state
+
+**Outcome:** Added a normal same-origin `GET /api/briefings/runs/:runId`
+contract, terminal failure-message persistence, and bounded collection-failure
+display. Today polls every two seconds until publication or failure, then
+refreshes the server-owned Today briefing. Started the loopback-only SearXNG
+Compose service and verified a bounded discovery-to-publisher-text run.
+
+### Empty non-update explanation normalization (2026-09-19)
+
+**Material coding prompt:** During the approved live run, the model returned
+empty `whatChanged` fields for items marked `new`. Treat that as absent only
+for new coverage, while retaining the non-empty explanation requirement for a
+substantial update. Add deterministic coverage for both cases.
+
+**Outcome:** Model parsing now accepts an empty nullable field from strict JSON
+mode, and materialization treats it as absent for new coverage. A substantial
+update still fails unless it names supported prior coverage and has a non-empty
+change explanation.
+
+### Independent-interest discovery and SearXNG freshness (2026-09-19)
+
+> For each interest, it should make a separate call instead combining in one
+> string - what do you think
+>
+> Review searXNG's response and see how dates are sent - or look at searXNG
+> docs to figure out if we actually need to do any filtering on client side if
+> the query given to searXNG already provides the date
+
+**Outcome:** Each interest is now a distinct discovery query; explicit search
+concepts remain additional, independently compiled plans. Daily SearXNG calls
+omit `time_range` after local measurements showed Bing unavailable while
+DuckDuckGo returns useful `publishedDate` metadata. The server keeps the
+post-response freshness guard because upstream support and range semantics vary
+by engine; no browser-side filtering is used for briefing eligibility.
+
+### Expand local SearXNG news engines (2026-09-19)
+
+> Add the first 5, if google news in searXNG works good then, we dont need to
+> use our google adapter
+
+**Outcome:** Enabled the five selected local SearXNG engines: DuckDuckGo News,
+Brave News, Bing News, Google News, and Reuters. A live aggregated news search
+returned direct publisher URLs from Google News and Reuters; Bing reported an
+attributable connection error while the other engines still supplied results.
+The configured application collection path now uses SearXNG exclusively. The
+application-level Google News RSS and GDELT adapters remain isolated fallback
+implementations for feasibility work without a SearXNG provider.
+
+### Publisher-date recovery experiment and implementation (2026-09-19)
+
+> Have we stored the links from the last run, so that we can test how effective
+> this strategy would be in getting the right articles?
+>
+> Do it
+>
+> Looks good, record the experiment details, and implement what we discussed
+
+**Material coding prompt:** Evaluate every retained undated source URL from the
+last run under the existing page-fetch bounds. Then recover publication dates
+before freshness rejection from JSON-LD `datePublished`, recognized metadata,
+or semantic time markup; reuse the same fetch as evidence; record provenance;
+never infer a date from a URL, snippet, retrieval time, or model output.
+
+**Outcome:** The read-only evaluation found publisher dates for 17 of 25 saved
+undated leads, five fresh at the original run time, and three with usable text.
+Implemented a six-request, round-robin publisher-date recovery budget shared
+with evidence retrieval, with no duplicate request for a recovered candidate.
+Diagnostics now retain recovered dates and provenance. The experiment and
+limitations are recorded in `docs/data-pipeline.md`.
+
+**Live validation:** The first local run exposed an unrelated composition
+robustness gap: one model item had an empty summary. The parser now discards
+that item rather than failing a whole partial edition. The replacement run
+published successfully; its diagnostics recorded three recovered JSON-LD dates,
+all stale at the fixed run time, while partial provider failures remained
+visible.
+
+### Next quality-evaluation plan (2026-09-19)
+
+> Okay, if google captcha becomes a problem, we will work on adding producer
+> link decoding in our google adapter. what is the next plan after current
+> implementation?
+
+**Outcome:** Recorded Google News RSS publisher-link decoding as conditional
+backlog item DISC-08. The next reviewed slice is 4.4.6: a bounded three-topic
+evaluation, retained engine provenance, and an article-type guard. It will
+measure actual fresh, relevant, evidence-backed inclusion before changing
+engine selection, fetch budgets, or relevance policy.
+
+### Implement discovery and evidence quality evaluation (2026-09-19)
+
+> Okay implement the plan
+
+**Material coding prompt:** Retain contributing SearXNG engines on diagnostic
+candidate occurrences; reject clear index, tag, search, and live-timeline pages
+before composition; add a local run-evaluation report that never reads article
+text; keep existing retrieval/model budgets and validate all changes.
+
+**Outcome:** Added engine names to retained SearXNG candidate diagnostics, a
+conservative index/live-timeline guard, and `npm run evaluate:briefing-run`.
+The three-topic live evaluation retained 72 occurrences: Google News was
+CAPTCHA-suspended and contributed none; Brave supplied the only fresh recovered
+article; DuckDuckGo and Reuters predominantly supplied stale results. The run
+published no new briefing because no candidate met the existing complete policy.
+
+### Today generation and reading experience review (2026-09-19)
+
+**User request:** “Review the today generation part in this application - both backend generation and how it is shown in the UI. And then give plan of addressing them. For forntend - focus on UX and see how it looks and sshould be easy for user to use. Briefing should be nice to look at and easy to read”
+
+**User continuation:** “continue”
+
+**Outcome:** Reviewed current generation, composition, persistence, polling, and reading UI. Identified topic starvation, missing freshness eligibility, stranded reservations, polling churn, misleading empty states, inaccessible archive content, and reading hierarchy issues. Initial browser inspection was blocked by a usage limit; the subsequent implementation session verified the rendered app.
+
+### Implement the complete Today review plan (2026-09-19)
+
+**User request:** “Work on all of them”
+
+**Material coding prompt:** Implement the reviewed backend and UI fixes together: round-robin discovery and evidence allocation within existing caps; rolling 24-hour eligibility at a fixed run clock with unknown/future dates excluded; bounded reading-length validation; durable run restoration and terminal reconciliation; no overlapping polling or repeated submission; readable editions, friendly saved topic labels, updates, citations, coverage disclosures, and full archive reads. Preserve existing uncommitted work and previous editions. Validate through deterministic fixtures and the local Worker/browser.
+
+**Outcome:** Implemented the combined scope. A bounded live run verified publication, progress restoration after reload, archive reading, and honest short-edition disclosures. It also exposed unchanged repeated coverage; added a deterministic exact-headline/zero-novelty guard and regression coverage. No deployment or credential changes.
+
+### Retained candidate metadata (2026-09-19)
+
+**User context:** “Why was there no geopolitical news - did we reject it after getting it from source, or source did notreturn any”
+
+**User request:** “We should store small meta-data about the temp candidates as well for now.”
+
+**Material coding prompt:** Retain a bounded trace of normalized discovery returns and collection outcomes independently of temporary evidence. Record query/topic/provider, returned counts, candidate title/URL/publisher/date, eligibility or budget outcome, evidence tier and size without article or snippet text. Keep metadata after publication/failure; expose it through an opt-in local diagnostic read and compare with immutable published citation URLs. Older runs must report unavailable metadata, not reconstructed guesses. Validate migration, retention, owner scoping, disabled diagnostic access, and collection reasons.
+
+**Outcome:** Added migration 7 and strict metadata contracts. Completed collections retain compact query/candidate diagnostics in their run record while terminal paths still delete temporary evidence. A separate local-only read exposes the trace and published citation URLs without enlarging routine status polling. Old runs return `diagnostics: null`.
+
+**Validation outcome:** The full check gate passed 153 tests and the production
+build. One live failed run retained 32 discovery occurrences across six queries
+(approximately 18 KB). Geopolitical results were returned but filtered before
+composition: eight unknown-date SearXNG items and eight stale Google News items;
+GDELT failed. The prior edition remained readable.
+
+### Durable chat sessions (2026-09-20)
+
+**User request:** “Chat's are not stored. I think we need to store chat sessions as well - older stories can be moved to archive in the future.”
+
+**Material coding prompt:** Replace transport-only chat history as the product
+record with Agent-owned, source-scoped `chat_sessions` and `chat_messages` rows.
+Bind a session to an owned published briefing run and story; use only that
+session's bounded history in Workers AI context. Expose same-origin, no-store
+create/list/read/delete APIs and render an archive-aware session library that
+reopens a session's original briefing. Preserve `AIChatAgent` for transport and
+reconnect recovery. Verify persistence through API calls, browser reload, tests,
+and the full quality gate.
+
+**Outcome:** Added durable session/message schemas and SQLite migration 8,
+session APIs, archive-aware Chat library, explicit deletion, and session-scoped
+model history. A local description-only session survived API reads and browser
+reload with both the user question and the grounded evidence-limit response.
+
+### Chat-library scrolling and evidence-retrieval planning (2026-09-20)
+
+**User request:** “Add a todo that we need to add a scroll for the left side
+panel of saved chats. Now commit and give me plan for improving the evidence
+retrieval.”
+
+**Outcome:** Added UX-04 to the single data-pipeline backlog. The requested
+evidence-retrieval assessment will be planned as a benchmarked, reviewable
+increment before changing the current bounded direct-fetch extractor.

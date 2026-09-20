@@ -64,19 +64,18 @@ before we build persisted topic management.
 
 ## Following increments
 
-The Bing-only warning described below is superseded by concrete local date
-filtering: all three engines are queried, then returned dates are filtered
-before result capping. Last day is 24 hours, month 31 days, year 365 days.
-The live Last day UI returned three eligible AI leads with all three engines
-represented, and displayed exact boundaries plus excluded/undated counts.
+Daily collection queries configured SearXNG news engines without `time_range`
+and enforces a rolling 24-hour returned-date check before it retrieves evidence.
+Month and year remain available to the inspection UI. This avoids a Bing-only
+path because SearXNG forwards `time_range` only to compatible engines, Bing
+News maps `day` to one hour, and the configured Brave News engine does not
+support it. Diagnostics must continue to disclose engine failures, unknown
+dates, and exclusions.
 
-Follow-up diagnosis: installed DuckDuckGo News and Brave News do not support
-time filters. SearXNG skips them when `time_range` is set, leaving Bing as the
-only eligible engine. Matched Worker requests confirmed Last day = ten
-Bing-only leads; Any time = ten mixed-engine leads. The UI now explicitly warns
-about this change. Before briefing generation, evaluate searching all engines
-without provider time filters and enforcing freshness from reliable publication
-dates, with an explicit policy for undated leads. Never silently widen a filter.
+The next measurement for DISC-06 is a fixed-query comparison of `any` and
+`day` on the deployed configuration. Record per-engine result counts and date
+metadata before deciding whether a supported provider can receive a dedicated
+filtered pass. Never silently widen a daily briefing's freshness window.
 
 **Topic management:** responsive app shell and persisted topic add/edit/pause/delete
 using Agent-owned SQLite migrations. Global schedule/reading defaults remain

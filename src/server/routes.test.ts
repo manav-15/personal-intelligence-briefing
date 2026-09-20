@@ -42,8 +42,44 @@ const applyTopicProposal = vi.fn<
   }
 >(() => ({ ok: true, preferences: examplePreferences }));
 const discardTopicProposal = vi.fn(() => ({ ok: true as const }));
-const readLatestBriefing = vi.fn<() => Briefing | undefined>(() => undefined);
+const readTodayBriefing = vi.fn<() => Briefing | undefined>(() => undefined);
 const listBriefingArchive = vi.fn<() => BriefingArchiveEntry[]>(() => []);
+const reserveManualBriefingRun = vi.fn(() => ({
+  ok: true as const,
+  runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+  date: '2026-09-19',
+  created: true,
+}));
+const failBriefingRun = vi.fn(() => true);
+const chatSession = {
+  id: '9c1d3d2a-7d9d-4053-9fc9-1f1a1564d4e6',
+  briefingRunId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+  briefingDate: '2026-09-19',
+  storyId: 'ai-release',
+  storyHeadline: 'Example model release',
+  createdAt: '2026-09-19T01:00:00.000Z',
+  updatedAt: '2026-09-19T01:00:00.000Z',
+};
+const listChatSessions = vi.fn(() => [chatSession]);
+const createChatSession = vi.fn(() => chatSession);
+const readChatSessionMessages = vi.fn(() => ({
+  session: chatSession,
+  messages: [],
+}));
+const deleteChatSession = vi.fn(() => true);
+const readBriefingRunStatus = vi.fn(() => ({
+  runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+  status: 'failed' as const,
+  failureMessage: 'No eligible evidence was available.',
+  collectionFailures: [
+    {
+      stage: 'discovery' as const,
+      provider: 'searxng' as const,
+      message: 'SearXNG returned HTTP 500.',
+    },
+  ],
+}));
+const createWorkflow = vi.fn(() => Promise.resolve({}));
 const exampleBriefing = briefingSchema.parse({
   schemaVersion: 1,
   runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
@@ -81,10 +117,22 @@ const env = {
       createTopicProposal,
       applyTopicProposal,
       discardTopicProposal,
-      readLatestBriefing,
+      readTodayBriefing,
       listBriefingArchive,
+      reserveManualBriefingRun,
+      failBriefingRun,
+      readBriefingRunStatus,
+      expireBriefingRuns: vi.fn(),
+      readLatestBriefingRun: readBriefingRunStatus,
+      readBriefingByRun: () => exampleBriefing,
+      readBriefingDiagnostics: () => null,
+      listChatSessions,
+      createChatSession,
+      readChatSessionMessages,
+      deleteChatSession,
     }),
   } as unknown as DurableObjectNamespace<PersonalBriefingAgent>,
+  BRIEFING_WORKFLOW: { create: createWorkflow } as unknown as Workflow,
 };
 
 afterEach(() => {
@@ -93,6 +141,49 @@ afterEach(() => {
 });
 
 describe('HTTP policy compatibility', () => {
+  it('restores current run state and opens a full archived edition', async () => {
+    const current = await app.fetch(
+      new Request(origin + '/api/briefings/current-run'),
+      env,
+    );
+    const edition = await app.fetch(
+      new Request(origin + '/api/briefings/archive/' + exampleBriefing.runId),
+      env,
+    );
+    const invalid = await app.fetch(
+      new Request(origin + '/api/briefings/archive/not-a-uuid'),
+      env,
+    );
+
+    expect(current.status).toBe(200);
+    expect(await current.json()).toEqual({ run: readBriefingRunStatus() });
+    expect(await edition.json()).toEqual({ briefing: exampleBriefing });
+    expect(invalid.status).toBe(400);
+  });
+
+  it('exposes retained diagnostics only through the opt-in local route', async () => {
+    const url = `${origin}/api/briefings/runs/${exampleBriefing.runId}/diagnostics`;
+    const enabled = await app.fetch(new Request(url), env);
+    const disabled = await app.fetch(new Request(url), {
+      ...env,
+      PREFERENCES_DIAGNOSTICS_ENABLED: undefined,
+    });
+    const invalid = await app.fetch(
+      new Request(origin + '/api/briefings/runs/not-a-uuid/diagnostics'),
+      env,
+    );
+
+    expect(await enabled.json()).toEqual({
+      diagnostics: null,
+      publishedSourceUrls: exampleBriefing.items.flatMap((item) =>
+        item.citations.map((citation) => citation.sourceUrl),
+      ),
+    });
+    expect(enabled.headers.get('Cache-Control')).toBe('no-store');
+    expect(disabled.status).toBe(404);
+    expect(invalid.status).toBe(400);
+  });
+
   const routes = [
     ['/api/health', 'GET', null],
     ['/api/preferences', 'GET, PUT', null],
@@ -107,6 +198,18 @@ describe('HTTP policy compatibility', () => {
     ['/api/feasibility/discovery', 'GET', null],
     ['/api/briefings/today', 'GET', 'no-store'],
     ['/api/briefings/archive', 'GET', 'no-store'],
+    ['/api/chats', 'GET, POST', 'no-store'],
+    [
+      '/api/chats/9c1d3d2a-7d9d-4053-9fc9-1f1a1564d4e6/messages',
+      'GET',
+      'no-store',
+    ],
+    ['/api/briefings/generate', 'POST', 'no-store'],
+    [
+      '/api/briefings/runs/ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+      'GET',
+      'no-store',
+    ],
   ] as const;
 
   it.each(routes)(
@@ -140,6 +243,92 @@ describe('HTTP policy compatibility', () => {
       expect(replacePreferences).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps durable chat-session routes owner-scoped, validated, and non-cacheable', async () => {
+    const list = await app.fetch(new Request(origin + '/api/chats'), env);
+    const create = await app.fetch(
+      new Request(origin + '/api/chats', {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          briefingRunId: chatSession.briefingRunId,
+          storyId: chatSession.storyId,
+        }),
+      }),
+      env,
+    );
+    const messages = await app.fetch(
+      new Request(`${origin}/api/chats/${chatSession.id}/messages`),
+      env,
+    );
+    const remove = await app.fetch(
+      new Request(`${origin}/api/chats/${chatSession.id}`, {
+        method: 'DELETE',
+      }),
+      env,
+    );
+    const rejected = await app.fetch(
+      new Request(origin + '/api/chats', {
+        method: 'POST',
+        headers: {
+          Origin: 'https://other.test',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          briefingRunId: chatSession.briefingRunId,
+          storyId: chatSession.storyId,
+        }),
+      }),
+      env,
+    );
+
+    expect(await list.json()).toEqual({ sessions: [chatSession] });
+    expect(create.status).toBe(201);
+    expect(await create.json()).toEqual({ session: chatSession });
+    expect(await messages.json()).toEqual({
+      session: chatSession,
+      messages: [],
+    });
+    expect(remove.status).toBe(204);
+    expect(rejected.status).toBe(403);
+    expect(list.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('starts a reserved manual run once and returns its workflow ID', async () => {
+    const response = await app.fetch(
+      new Request(origin + '/api/briefings/generate', { method: 'POST' }),
+      env,
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({
+      runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+      created: true,
+    });
+    expect(createWorkflow).toHaveBeenCalledOnce();
+  });
+
+  it('reads a persisted terminal status and validates the run ID', async () => {
+    const status = await app.fetch(
+      new Request(
+        origin + '/api/briefings/runs/ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+      ),
+      env,
+    );
+    const invalid = await app.fetch(
+      new Request(origin + '/api/briefings/runs/not-a-uuid'),
+      env,
+    );
+
+    expect(status.status).toBe(200);
+    expect(await status.json()).toEqual(readBriefingRunStatus());
+    expect(readBriefingRunStatus).toHaveBeenCalledWith(
+      'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
+      'single-user',
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ error: 'Invalid briefing run ID.' });
+  });
 
   it.each([
     '/api',
@@ -183,11 +372,6 @@ describe('HTTP policy compatibility', () => {
       'Preference diagnostics are disabled.',
       null,
     ],
-    [
-      '/api/briefings/today',
-      'Preference diagnostics are disabled.',
-      'no-store',
-    ],
     ['/api/inspection/search', 'Local inspection is disabled.', 'no-store'],
     ['/api/inspection/missing', 'Local inspection is disabled.', 'no-store'],
   ])(
@@ -229,6 +413,7 @@ describe('HTTP policy compatibility', () => {
     '/api/inspection/evidence',
     '/api/inspection/missing',
     '/api/briefings/today',
+    '/api/briefings/runs/ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
   ])('checks origin before method for %s', async (path) => {
     for (const headers of [
       { Origin: 'https://other.test' },
@@ -274,7 +459,7 @@ describe('HTTP policy compatibility', () => {
     expect(await emptyToday.json()).toEqual({ briefing: null });
     expect(await emptyArchive.json()).toEqual({ briefings: [] });
 
-    readLatestBriefing.mockReturnValueOnce(exampleBriefing);
+    readTodayBriefing.mockReturnValueOnce(exampleBriefing);
     listBriefingArchive.mockReturnValueOnce([
       {
         runId: exampleBriefing.runId,

@@ -129,6 +129,23 @@ with no application telemetry. Composition deliberately does not publish a
 briefing or expose a generation route. Workflow orchestration and atomic
 publication remain the next slice.
 
+## Durable grounded chat (2026-09-20)
+
+`PersonalBriefingAgent` remains the sole durable owner for both briefing and
+chat capabilities. `AIChatAgent` supplies the WebSocket request/recovery
+transport, while application-visible `chat_sessions` and `chat_messages` rows
+provide durable product history. A session can be created only for an owned,
+published briefing run and its existing story; it stores the immutable briefing
+date and story headline so it remains browsable after the briefing is older.
+
+Chat model context is built from the session's selected story and only that
+session's most recent 12 stored turns. A story summary, stored update note, and
+code-owned citations are the complete evidence boundary. The browser renders
+citations independently, and code adds `[S1]` when a model response omits a
+source label. The session APIs are same-origin and `no-store`: list/create,
+read messages, and permanent owner-scoped delete. Publisher evidence refresh
+and a richer cross-story briefing conversation remain deferred.
+
 ## Discovery feasibility result
 
 Google News RSS returned candidates for the initial AI, world-news, and
@@ -176,9 +193,10 @@ configuration. Container disk/cache is not application memory; durable app
 state continues to live in the personal Agent's SQLite database.
 
 The provider is now available to bounded collection as the first channel when
-this binding is supplied by the later generation Workflow. Google News RSS and
-GDELT remain bounded fallbacks. A fair scheduler is still required so one topic
-or provider cannot consume the complete run budget; see
+this binding is supplied by the generation Workflow. For local development,
+the same Workflow uses the loopback `SEARXNG_BASE_URL` binding when configured;
+the private Container remains the deployed path. Google News RSS and GDELT
+remain bounded fallbacks. The bounded scheduler now rotates topics and providers; see
 [DISC-07](data-pipeline.md#9-improvement-backlog).
 
 ## Local inspection integration
@@ -195,3 +213,44 @@ browser requests; leave them disabled in deployment. These controls are local
 development safeguards, not the planned Cloudflare Access authentication.
 No app data is persisted. DNS-aware destination restrictions and robust
 readable-body extraction are still required before production retrieval.
+
+## Today and immutable editions
+
+Today and Archive share one reading component. Immutable briefings optionally
+carry snapshotted topic names; older payloads retain compatibility through readable
+ID fallbacks. Archive detail reads are owner-scoped by run UUID. Today remains an
+exact server-timezone date lookup, with an explicitly dated prior-edition link.
+
+The browser recovers the latest durable run and polls sequentially, including a
+successful edition read before declaring publication complete. Terminal Workflow
+states close stranded reservations; abandoned reservations expire after 30 minutes.
+Late publication is rejected once a run is failed. Collection and composition have
+10/3-minute step timeouts with zero automatic retries. Failure marking and atomic
+publication may retry idempotently. No provider/model call is replayed by recovery.
+
+Collection rotates per-topic jobs through configured SearXNG and rotates
+retained candidates for article retrieval. Freshness is an inclusive 24-hour
+application-side check against the fixed run clock. For an otherwise eligible
+undated result, a bounded publisher fetch can recover a date from JSON-LD,
+recognized metadata, or a semantic time element; the resulting retrieval is
+reused as evidence. Unknown/future dates remain ineligible. Search-reported and
+publisher-reported provenance are retained separately; neither proves relevance
+or publisher quality (DISC-03). Reader disclosures are deduplicated, while run
+diagnostics stay intact.
+
+## Retained collection metadata
+
+Migration 7 separates compact `collection_diagnostics` on a run from temporary
+`briefing_candidates` evidence. Completed collection stores normalized discovery
+occurrences before filtering, including query identity and counts, then annotates
+eligibility, candidate/retrieval budget, and evidence outcomes. Terminal publication
+and failure continue deleting article text, but retain this bounded metadata.
+Each SearXNG occurrence also retains its contributing engine names, allowing
+quality evaluation to distinguish engine-specific date and evidence outcomes.
+Publication inclusion is derived from that run's immutable citation URLs; a run
+without publication returns null selection rather than implying model rejection.
+
+`GET /api/briefings/runs/:runId/diagnostics` is owner-scoped, no-store, and requires
+`PREFERENCES_DIAGNOSTICS_ENABLED=true`. It is separate from product status polling.
+Old records return null diagnostics. Interrupted collection before its durable
+store has no trace; diagnostic retention/deletion is tracked under STORE-01.

@@ -2,9 +2,14 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes } from 'react-router';
 import { App } from './App';
-import { ArchiveScreen, TodayScreen } from './BriefingScreens';
+import {
+  ArchiveScreen,
+  ArchivedBriefingScreen,
+  TodayScreen,
+} from './BriefingScreens';
 import { SettingsScreen, TopicsScreen } from './PreferencesScreens';
-import { InspectScreen, PlannedScreen } from './Screens';
+import { InspectScreen } from './Screens';
+import { ChatScreen } from './ChatScreen';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -18,17 +23,10 @@ createRoot(root).render(
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<TodayScreen />} />
-          <Route
-            path="chat"
-            element={
-              <PlannedScreen title="Chat">
-                Grounded questions about cited stories arrive after published
-                briefings and evidence memory exist.
-              </PlannedScreen>
-            }
-          />
+          <Route path="chat" element={<ChatScreen />} />
           <Route path="topics" element={<TopicsScreen />} />
           <Route path="archive" element={<ArchiveScreen />} />
+          <Route path="archive/:runId" element={<ArchivedBriefingScreen />} />
           <Route path="settings" element={<SettingsScreen />} />
           <Route path="inspect" element={<InspectScreen />} />
         </Route>

@@ -1,6 +1,6 @@
 # Implementation plan
 
-Last updated: 2026-09-19. Maintain this plan after each increment or scope
+Last updated: 2026-09-20. Maintain this plan after each increment or scope
 decision. Record evidence, limitations, and review status; do not mark a whole
 milestone complete when only a smaller slice is delivered.
 
@@ -12,7 +12,7 @@ milestone complete when only a smaller slice is delivered.
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
 | **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Completed and accepted                                         |
 | **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.3.1–4.3.3 awaiting review                       |
-| **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Planned                                                        |
+| **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Chat foundation implemented; awaiting review                   |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
 
 ## Increment 2 outcome and retained limitations
@@ -288,9 +288,51 @@ remains labelled and cannot support unsupported detail.
 
 Add an idempotent manual launch route that starts a Cloudflare Workflow. The
 Workflow owns retries and passes the run ID through collection, composition, and
-atomic Agent publication. Today renders the newest dated briefing; Archive lists
-prior publications and opens their source links. A run status view explains
-partial collection failures. Scheduling remains Increment 6.
+atomic Agent publication. `GET /api/briefings/today` derives the current date
+from the saved preference timezone and returns only that exact dated briefing or
+`null`; the browser does no date filtering. Archive lists prior publications and
+opens their source links. A run status view explains partial collection failures.
+Scheduling remains Increment 6.
+
+Before enabling retries, classify failure boundaries. A Workflow may retry an
+unexpected Worker or Durable Object infrastructure failure only where the step
+is idempotent or its durable side effect proves the work completed. It must not
+blindly repeat bounded discovery or the one-call composition step after an
+ambiguous provider/model outcome. The concrete retry policy is deferred to its
+own reviewed design before 4.4 implementation.
+
+#### 4.4.1 — Server-owned Today selection: implemented, awaiting review
+
+`GET /api/briefings/today` now asks the Agent for the exact date in the saved
+timezone. The Agent formats the date from a supplied clock, queries only that
+stored date, and returns no older fallback. The browser client calls this
+server-owned endpoint and renders its `briefing`/`null` response without date
+logic. Deterministic tests cover the Asia/Kolkata day boundary and absent exact
+date. Workflow launch, status, and generation remain the next 4.4 sub-slice.
+
+#### 4.4.2 — Manual Workflow, normal run status, and local Today flow: implemented, awaiting review
+
+`POST /api/briefings/generate` reserves one Agent-owned active run and starts a
+Workflow with that UUID as its instance ID. The Workflow persists collection
+output before its one composition call, publishes atomically, and cleans up
+temporary evidence on either terminal path. Collection and composition have no
+automatic retry; idempotent publication may retry twice. A failed run retains
+a bounded terminal message and attributed collection failures.
+
+`GET /api/briefings/runs/:runId` is a normal same-origin product API, scoped to
+the authenticated owner once Access is configured. It is deliberately not a
+diagnostic endpoint: the browser polls it every two seconds until `published`
+or `failed`, refreshes Today after publication, and renders persisted failure
+reasons after failure. The local Workflow uses `SEARXNG_BASE_URL` when set so
+the loopback Compose service is exercised; deployed Workers use the private
+Container binding.
+
+Validation: deterministic route, client, Agent, and composition tests pass.
+The local loopback service produced publisher text in the bounded verifier. A
+live local Workflow then reached `published`; Today returned a partial
+four-item briefing with 17 disclosed limitations after upstream/evidence
+failures. The published payload confirms end-to-end mechanics, not source
+quality or daily coverage.
 
 ### 3A validation
 
@@ -323,6 +365,23 @@ partial collection failures. Scheduling remains Increment 6.
   can be stored.
 
 ## Update log
+
+- **2026-09-19:** Implemented 4.4.4 retained candidate metadata, awaiting review.
+  `npm run check` passed formatting, lint, typechecks, 153 tests, and production
+  build. The local Worker migrated successfully; a live failed run retained 32
+  discovery occurrences across six queries in roughly 18 KB of diagnostic JSON.
+  Geopolitical returns were eight undated SearXNG items and eight stale Google
+  News items; GDELT failed. The browser retained the previous briefing and showed
+  the terminal failure. Automated tests verify metadata survives publication and
+  failure, article text is absent, owner scoping holds, old runs return null, and
+  the diagnostic route is disabled without its local binding.
+
+- **2026-09-19:** Completed the combined Today review implementation (4.4.3),
+  awaiting review. The full `npm run check` gate passed 151 tests, lint,
+  typechecking, formatting, and the production build. Browser/Worker checks
+  covered live partial publication, progress recovery after reload, full archive
+  reads, invalid-edition retry UI, and mobile width. Preserved source-quality
+  limits under DISC-03, BRIEF-01, EVAL-01, and COST-01; no deployment occurred.
 
 - **2026-09-18:** Consolidated original milestones and current feasibility
   evidence. Retained application-side date filtering by user decision; added
@@ -431,3 +490,176 @@ partial collection failures. Scheduling remains Increment 6.
   checks, and content-lab card rendering into named helpers while preserving
   their public behavior. A stricter 10 threshold remains a future refactoring
   target after this baseline is established.
+- **2026-09-19:** Implemented 4.4.1 server-owned Today selection, awaiting
+  review. The API now returns only the briefing for the date derived in the
+  saved preference timezone; it does not return the newest prior briefing.
+- **2026-09-19:** Implemented 4.4.2, awaiting review: manual Workflow launch,
+  atomic reserve/publish/fail behavior, normal same-origin run-status polling,
+  terminal failure persistence, and Today generation feedback. Local SearXNG
+  is running on loopback. A live run published a partial four-item briefing;
+  upstream/evidence limitations remained disclosed.
+
+### 4.4.3 — Today reliability and reading experience: implemented, awaiting review
+
+On 2026-09-19 the user authorized all four slices of the Today review plan
+as a combined increment. Discovery and evidence selection now rotate across
+enabled topics before spending their shared remainder. Candidate retention is
+fairly capped; collection eligibility uses the inclusive preceding 24 hours at
+the Workflow's fixed timestamp, excluding future and unknown dates. This is
+search-reported freshness, not verified publisher dating (DISC-03).
+
+Composition snapshots topic names, deduplicates reader-facing warnings, names
+uncovered topics, discloses short editions, validates an upper reading budget
+of 220 words per requested minute, and uses a story-scaled output allowance
+capped at 6,000 tokens. Exact previously covered headlines cannot be selected
+as new; zero-novelty items are omitted. Broader semantic calibration remains
+BRIEF-01/EVAL-01. Short outputs remain valid rather than padded.
+
+Today restores the durable latest run, polls serially every two seconds after
+each completed read, preserves a visible edition during refresh, distinguishes
+load failures from absence, and prevents repeated submissions. Workflow
+terminal status reconciles failed reservations; a 30-minute reservation timeout
+fences abandoned work. Collection/composition timeouts are 10/3 minutes with no
+automatic provider/model retries; publication and failure marking are idempotent.
+Archive entries now open complete immutable editions. Today links the latest
+prior edition when today's edition is absent, without misdating it.
+
+The reading surface has responsive editorial typography, actual reading time,
+friendly topic links, accessible source descriptions, visible change explanations,
+and expandable coverage details. Raw collection diagnostics remain on run records.
+
+Validation: deterministic collection, composition, Workflow, Agent, route, client,
+and serial-polling regression coverage; local frontend/Worker and live generation;
+reload restored a disabled generation control while work continued; archive links
+opened the retained full edition. The mobile DOM measured 390px with no horizontal
+overflow. The live run published a short partial edition after provider failures
+and publisher 403s, not evidence of comprehensive topic coverage. Final quality gate
+results are recorded in the update log below. Relevant backlog: DISC-03, DISC-07,
+BRIEF-01–03, UX-03, EVAL-01, COST-01. Next work is governed by those IDs after review.
+
+### 4.4.4 — Retained candidate metadata: implemented, awaiting review
+
+The user requested small metadata for temporary candidates after a historical run
+could not distinguish empty discovery from filtering or editorial omission.
+Migration 7 adds `briefing_runs.collection_diagnostics`. Each completed collection
+stores per-query topic/provider/query/status/counts and per-return title, URL,
+publisher, reported date, filtering/budget outcome, evidence tier, and evidence
+size/truncation or bounded failure reason. No snippets or article bodies are copied.
+
+Metadata survives both publication and failure while temporary evidence is deleted.
+An opt-in local `GET /api/briefings/runs/:runId/diagnostics` read returns retained
+metadata plus published source URLs, allowing final inclusion to be identified.
+The existing small polling contract is unchanged. Pre-migration runs return null
+metadata; their candidates cannot be reconstructed. The trace starts at normalized
+adapter output, not the raw provider response, and is persisted when collection
+finishes; interrupted pre-storage collection has no retained trace. Counts are
+query occurrences, so URLs may appear under several queries/topics.
+
+The normal 12-query/8-result budget bounds the trace to 96 occurrences; the schema
+allows at most 60 queries and 1,500 occurrences for supported larger budgets.
+Metadata stays with its run for now; retention/deletion policy remains STORE-01.
+No production diagnostic route is enabled. Acceptance and validation are recorded
+under STORE-02 in the canonical backlog. Next slice remains subject to user review.
+
+### 4.4.5 — Publisher-date recovery: implemented, awaiting review
+
+SearXNG results without a search-supplied date no longer fail freshness before
+one bounded recovery attempt. Collection spends at most six shared evidence
+requests, rotates them across topics, and extracts publication dates from
+JSON-LD `datePublished`, recognized HTML metadata, then semantic `time` markup.
+The recovered fetch is reused as the candidate's evidence, preventing a second
+publisher request. Recovered dates remain subject to the original fixed run
+clock, source exclusions, and future/stale checks; page URLs, snippets, and
+models cannot infer freshness.
+
+The run diagnostic now records recovered dates and their provenance. A
+read-only retrospective of the last run recovered dates from 17 of 25 undated
+publisher pages, with five fresh at the run time and three returning readable
+evidence. Validation covers JSON-LD precedence, metadata and time fallbacks,
+freshness re-evaluation, and evidence reuse. The next live generation should
+measure the actual inclusion rate before changing the shared budget or relaxed
+article-type policy.
+
+Local workflow validation then published run
+`9953941c-7867-4db0-85dc-c143c8c77aba`. It recorded three recovered JSON-LD
+dates, all stale at that run's fixed clock, and published a partial one-item
+edition despite Bing connection errors and a Google News CAPTCHA suspension.
+An initially rejected live draft exposed an empty model-summary item; the
+composition guard now discards that individual item rather than failing the
+whole edition, with deterministic regression coverage.
+
+### 4.4.6 — Discovery and evidence quality evaluation: implemented, awaiting review
+
+Run a small, separately recorded live evaluation across the enabled topics and
+several days or controlled query fixtures. For each topic, measure SearXNG
+engine failures, returned-date availability, publisher-date recovery rate,
+fresh recovered candidates, evidence retrieval success, relevance rejection,
+and final inclusion. Keep the current six-request recovery share and one model
+call per run; the work is measurement and diagnostics, not a budget expansion.
+
+Add per-candidate contributing-engine metadata to the retained diagnostic trace
+so the app can distinguish a missing date from Brave, DuckDuckGo, Google News,
+or Reuters. Add a deterministic article-type guard that rejects index, tag,
+and live-timeline pages unless they can be identified as a discrete article.
+Validate that a publisher-recovered stale date remains excluded, that a fresh
+article can reach composition with its provenance, and that diagnostics expose
+the engine and rejection reason without retaining snippets or article text.
+
+Review the measured results before altering engine configuration, the date
+recovery share, the evidence size limit, or relevance policy. If SearXNG Google
+News CAPTCHA suspension materially harms fresh evidence coverage, begin
+conditional backlog item DISC-08: add the existing Google News RSS adapter's
+publisher-link decoder behind the same normalized discovery contract.
+
+Local evaluation run `470562d3-7b1f-4a87-ad18-faa0dccdcd01` covered three
+enabled topics and 72 returned occurrences. Bing connection failures and Google
+News CAPTCHA suspension made every query partial; Google contributed no retained
+candidate. Brave supplied the sole fresh publisher-date-recovered article,
+DuckDuckGo supplied most stale and description candidates, and Reuters supplied
+only stale candidates. The run failed honestly because no item met the complete
+relevance, novelty, and evidence policy. The report is reproducible with
+`npm run evaluate:briefing-run -- 470562d3-7b1f-4a87-ad18-faa0dccdcd01`.
+
+## Increment 5.1 — Grounded chat foundation: implemented, awaiting review
+
+`PersonalBriefingAgent` remains the single durable owner of preferences,
+briefings, and chat. It now extends `AIChatAgent` for WebSocket transport and
+reconnect recovery, while explicit `chat_sessions` and `chat_messages` Durable
+Object SQLite rows retain the product-visible history. Each session is bound to
+one published briefing run and story, carries its briefing date/headline for
+the archive, and can be reopened after reload. React uses `useAgent` and `useAgentChat` at
+the private `/agents/personal-briefing/single-user` route; Static Assets sends
+that route to the Worker rather than SPA HTML.
+
+Each turn must identify an owned saved briefing run and one story in that
+edition. The Agent validates both, builds a bounded source-labelled system
+context from the selected item, its stored update note, and code-owned
+citations, then calls Workers AI Llama 3.3 70B. It receives no discovery or
+general browsing tool and never accepts model-generated URLs. The UI renders
+only the selected story's stored source links. When today has no edition, the
+screen selects the most recent saved edition so next-day follow-ups remain
+useful.
+
+The first attempted streamed evidence-refresh tool exposed duplicated Workers
+AI tool-input fragments in local testing. The foundation therefore answers from
+the source-backed saved briefing summary and clearly instructs the model not to
+claim it read the full article. Bounded publisher evidence refresh remains a
+follow-up after an adapter-compatible tool path is verified. Session deletion
+removes the application's stored session and messages; owner-scoped deletion of
+briefing records remains STORE-01.
+
+Validation: deterministic context, input, and Workers AI response parsing tests
+pass. A local Worker and browser loaded the selected-story UI and its source
+links. A live Agent WebSocket request for the saved carbon-emissions story
+returned one clean answer: PM Modi's stated emissions comparison and climate
+action call, attributed to `[S1]`. The persisted response was inspected through
+the Agent message route. Full quality-gate results remain required before
+review.
+
+Follow-up: product-visible history is now explicit rather than inferred from
+the Agent transport transcript. Migration 8 adds `chat_sessions` and
+`chat_messages`; list/create/read/delete HTTP routes are same-origin and
+`no-store`. A local description-only session survived separate API reads and a
+browser reload with both user and Agent turns, then correctly reopened its
+original archived briefing and citation. The next live answer included `[S1]`;
+code now adds the selected story's first code-owned label if the model omits it.

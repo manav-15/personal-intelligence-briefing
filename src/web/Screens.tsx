@@ -32,7 +32,8 @@ export function AppShell({ connection }: { connection: string }) {
       </nav>
       <Outlet />
       <footer>
-        Local inspection only. Searches and extracted text are not saved.
+        Your briefings are saved in your personal library. Sources open on their
+        publisher’s website.
       </footer>
     </main>
   );

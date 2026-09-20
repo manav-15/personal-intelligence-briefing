@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { briefingSchema } from '../shared/briefings';
-import { listBriefingArchive, readLatestBriefing } from './briefings-client';
+import {
+  generateBriefing,
+  listBriefingArchive,
+  readBriefingRunStatus,
+  readTodayBriefing,
+} from './briefings-client';
 
 const exampleBriefing = briefingSchema.parse({
   schemaVersion: 1,
@@ -33,7 +38,7 @@ afterEach(() => {
 });
 
 describe('briefing client', () => {
-  it('validates Today and Archive responses from the Worker', async () => {
+  it('validates briefing reads, generation, and run status responses', async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(Response.json({ briefing: exampleBriefing }))
@@ -49,13 +54,41 @@ describe('briefing client', () => {
             },
           ],
         }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ runId: exampleBriefing.runId, created: true }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          runId: exampleBriefing.runId,
+          status: 'running',
+          failureMessage: null,
+          collectionFailures: [],
+        }),
       );
 
     vi.stubGlobal('fetch', fetcher);
 
-    await expect(readLatestBriefing()).resolves.toEqual(exampleBriefing);
+    await expect(readTodayBriefing()).resolves.toEqual(exampleBriefing);
     await expect(listBriefingArchive()).resolves.toHaveLength(1);
+    await expect(generateBriefing()).resolves.toEqual({
+      runId: exampleBriefing.runId,
+      created: true,
+    });
+    await expect(
+      readBriefingRunStatus(exampleBriefing.runId),
+    ).resolves.toMatchObject({
+      runId: exampleBriefing.runId,
+      status: 'running',
+    });
     expect(fetcher).toHaveBeenNthCalledWith(1, '/api/briefings/today');
     expect(fetcher).toHaveBeenNthCalledWith(2, '/api/briefings/archive');
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/briefings/generate', {
+      method: 'POST',
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      4,
+      `/api/briefings/runs/${exampleBriefing.runId}`,
+    );
   });
 });

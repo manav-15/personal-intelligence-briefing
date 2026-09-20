@@ -5,6 +5,8 @@ use_default_settings:
       - bing news
       - duckduckgo news
       - brave.news
+      - google news
+      - reuters
       # The news engine shares this engine's network configuration.
       - brave
 

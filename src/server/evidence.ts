@@ -4,6 +4,11 @@ import type { evidenceSchema } from '../shared/inspection';
 import { plainText } from './content';
 import { readBoundedText } from './http';
 
+type PublisherDate = {
+  publishedAt: string;
+  provenance: 'publisher-jsonld' | 'publisher-meta' | 'publisher-time';
+};
+
 const MAX_ARTICLE_BYTES = 500_000;
 const MINIMUM_READABLE_CHARACTERS = 400;
 const MAXIMUM_EVIDENCE_CHARACTERS = 12_000;
@@ -136,6 +141,15 @@ async function retrievePublisherEvidence(
 
   if (html === null)
     return unavailable('The publisher page exceeded the size limit.');
+
+  return extractPublisherEvidence(articleUrl, html);
+}
+
+function extractPublisherEvidence(
+  articleUrl: URL,
+  html: string,
+): EvidenceResult {
+  const publicationDate = extractPublicationDate(html);
   const pageTitle = plainText(
     /<title[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
   );
@@ -145,11 +159,20 @@ async function retrievePublisherEvidence(
   ) {
     return unavailable('The publisher returned a challenge page.');
   }
+
+  if (isIndexOrTimelinePage(html, pageTitle, articleUrl)) {
+    return unavailable(
+      'The publisher page is an index or live timeline, not a discrete article.',
+      publicationDate,
+      'index-or-timeline',
+    );
+  }
   const { text, extraction } = extractReadableText(html);
 
   if (text.length < MINIMUM_READABLE_CHARACTERS) {
     return unavailable(
       'The publisher page did not contain enough readable evidence.',
+      publicationDate,
     );
   }
 
@@ -161,11 +184,170 @@ async function retrievePublisherEvidence(
     provenance: 'publisher-page',
     pageTitle,
     extraction,
+    publicationDate,
   };
 }
 
-function unavailable(reason: string): EvidenceResult {
-  return { status: 'unavailable', reason };
+function unavailable(
+  reason: string,
+  publicationDate?: PublisherDate,
+  pageKind?: 'index-or-timeline',
+): EvidenceResult {
+  return { status: 'unavailable', reason, publicationDate, pageKind };
+}
+
+function isIndexOrTimelinePage(
+  html: string,
+  pageTitle: string,
+  articleUrl: URL,
+): boolean {
+  const indexPath =
+    /\/(?:tag|tags|topic|topics|category|categories|search)(?:\/|$)/iu.test(
+      articleUrl.pathname,
+    );
+  const timelineTitle =
+    /\b(?:live(?:\s+(?:blog|updates?|coverage))?|timeline|updated daily)\b/iu.test(
+      pageTitle,
+    );
+
+  return indexPath || timelineTitle || hasIndexJsonLdType(html);
+}
+
+function hasIndexJsonLdType(html: string): boolean {
+  const indexTypes = new Set([
+    'CollectionPage',
+    'ItemList',
+    'SearchResultsPage',
+    'LiveBlogPosting',
+  ]);
+  const scripts = html.match(
+    /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/giu,
+  );
+
+  for (const script of scripts ?? []) {
+    const text = script.replace(/^.*?>/su, '').replace(/<\/script>$/iu, '');
+
+    try {
+      if (jsonLdTypes(JSON.parse(text)).some((type) => indexTypes.has(type)))
+        return true;
+    } catch {
+      // Invalid structured data is untrusted and cannot classify a page.
+    }
+  }
+
+  return false;
+}
+
+function jsonLdTypes(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(jsonLdTypes);
+
+  if (value === null || typeof value !== 'object') return [];
+  const record = value as Record<string, unknown>;
+  const type = record['@type'];
+  const ownTypes = Array.isArray(type)
+    ? type.filter((item): item is string => typeof item === 'string')
+    : typeof type === 'string'
+      ? [type]
+      : [];
+
+  return [...ownTypes, ...jsonLdTypes(record['@graph'])];
+}
+
+function extractPublicationDate(html: string): PublisherDate | undefined {
+  return (
+    jsonLdPublicationDate(html) ??
+    metaPublicationDate(html) ??
+    timeElementPublicationDate(html)
+  );
+}
+
+function jsonLdPublicationDate(html: string): PublisherDate | undefined {
+  const scripts = html.match(
+    /<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/giu,
+  );
+
+  for (const script of scripts ?? []) {
+    const text = script.replace(/^.*?>/su, '').replace(/<\/script>$/iu, '');
+
+    try {
+      const date = firstJsonLdDate(JSON.parse(text));
+
+      if (date !== undefined)
+        return { publishedAt: date, provenance: 'publisher-jsonld' };
+    } catch {
+      // Invalid structured data is untrusted and cannot recover freshness.
+    }
+  }
+}
+
+function firstJsonLdDate(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const date = firstJsonLdDate(item);
+
+      if (date !== undefined) return date;
+    }
+
+    return undefined;
+  }
+
+  if (value === null || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const date = normalizedDate(record.datePublished);
+
+  if (date !== undefined) return date;
+
+  return firstJsonLdDate(record['@graph']);
+}
+
+function metaPublicationDate(html: string): PublisherDate | undefined {
+  const dateNames = new Set([
+    'article:published_time',
+    'date',
+    'datepublished',
+    'parsely-pub-date',
+    'dc.date',
+    'publish-date',
+    'pub_date',
+  ]);
+  const tags = html.match(/<meta\b[^>]*>/giu) ?? [];
+
+  for (const tag of tags) {
+    const name =
+      attribute(tag, 'property') ??
+      attribute(tag, 'name') ??
+      attribute(tag, 'itemprop');
+    const date = normalizedDate(attribute(tag, 'content'));
+
+    if (
+      name !== undefined &&
+      date !== undefined &&
+      dateNames.has(name.toLowerCase())
+    )
+      return { publishedAt: date, provenance: 'publisher-meta' };
+  }
+}
+
+function timeElementPublicationDate(html: string): PublisherDate | undefined {
+  for (const tag of html.match(/<time\b[^>]*>/giu) ?? []) {
+    const date = normalizedDate(attribute(tag, 'datetime'));
+
+    if (date !== undefined)
+      return { publishedAt: date, provenance: 'publisher-time' };
+  }
+}
+
+function attribute(tag: string, name: string): string | undefined {
+  return new RegExp(`\\b${name}=["']([^"']+)["']`, 'iu').exec(tag)?.[1];
+}
+
+function normalizedDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.trim() === '') return undefined;
+  const timestamp = Date.parse(value);
+
+  return Number.isFinite(timestamp)
+    ? new Date(timestamp).toISOString()
+    : undefined;
 }
 
 function isFetchablePublisherUrl(url: URL): boolean {

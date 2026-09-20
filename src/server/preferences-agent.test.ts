@@ -1,3 +1,4 @@
+import type { BriefingDiagnostics } from '../shared/briefing-diagnostics';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { briefingSchema } from '../shared/briefings';
@@ -109,6 +110,7 @@ describe('persistence document contract', () => {
             },
           ],
           failures: [],
+          diagnostics: fixtureDiagnostics(),
         },
         'test-user',
       ),
@@ -147,9 +149,103 @@ describe('persistence document contract', () => {
       idempotent: false,
     });
     expect(agent.readBriefingCollection(runId, 'test-user')).toBeUndefined();
+    expect(agent.readBriefingDiagnostics(runId, 'test-user')).toEqual(
+      fixtureDiagnostics(),
+    );
+    expect(agent.readBriefingDiagnostics(runId, 'other-user')).toBeUndefined();
     expect(
       agent.readRecentBriefingCoverage('test-user', '2026-09-19'),
     ).toMatchObject([{ runId, itemId: 'example-story', topicIds: ['ai'] }]);
+    expect(
+      agent.readTodayBriefing('test-user', new Date('2026-09-18T20:00:00Z')),
+    ).toMatchObject({ runId, date: '2026-09-19' });
+    expect(
+      agent.readTodayBriefing('test-user', new Date('2026-09-18T12:00:00Z')),
+    ).toBeUndefined();
+  });
+
+  it('restores an active run and releases an expired reservation with evidence cleanup', () => {
+    const agent = inMemoryAgent();
+
+    agent.replacePreferences(examplePreferences, 0, 'test-user');
+    const first = agent.reserveManualBriefingRun('test-user');
+
+    if (!first.ok) throw new Error('Reservation failed');
+    expect(agent.reserveManualBriefingRun('test-user')).toMatchObject({
+      runId: first.runId,
+      created: false,
+    });
+    expect(agent.readLatestBriefingRun('test-user')).toMatchObject({
+      runId: first.runId,
+      status: 'running',
+    });
+    agent.storeBriefingCollection(
+      first.runId,
+      temporaryCollection(),
+      'test-user',
+    );
+    testDatabase(agent)
+      .prepare(
+        "UPDATE briefing_runs SET created_at = datetime('now', '-31 minutes') WHERE id = ?",
+      )
+      .run(first.runId);
+    agent.expireBriefingRuns('test-user');
+    expect(agent.readBriefingRunStatus(first.runId, 'test-user')).toMatchObject(
+      { status: 'failed' },
+    );
+    expect(
+      agent.readBriefingCollection(first.runId, 'test-user'),
+    ).toBeUndefined();
+    expect(agent.reserveManualBriefingRun('test-user')).toMatchObject({
+      created: true,
+    });
+    expect(
+      agent.readBriefingByRun(first.runId, 'another-user'),
+    ).toBeUndefined();
+  });
+
+  it('rejects generation when all topics are paused', () => {
+    const agent = inMemoryAgent();
+
+    agent.replacePreferences(
+      {
+        ...examplePreferences,
+        topics: examplePreferences.topics.map((topic) => ({
+          ...topic,
+          enabled: false,
+        })),
+      },
+      0,
+      'test-user',
+    );
+    expect(agent.reserveManualBriefingRun('test-user')).toMatchObject({
+      ok: false,
+      error: 'Enable at least one topic before generating a briefing.',
+    });
+  });
+
+  it('reports absent diagnostics honestly for older runs and migrates an existing database once', () => {
+    const agent = inMemoryAgent();
+
+    agent.replacePreferences(examplePreferences, 0, 'test-user');
+    testDatabase(agent)
+      .prepare('ALTER TABLE briefing_runs DROP COLUMN collection_diagnostics')
+      .run();
+    testDatabase(agent)
+      .prepare('DELETE FROM schema_migrations WHERE version = 7')
+      .run();
+    const run = agent.reserveManualBriefingRun('test-user');
+
+    if (!run.ok) throw new Error('Expected reservation');
+    expect(agent.readBriefingDiagnostics(run.runId, 'test-user')).toBeNull();
+    expect(agent.readBriefingDiagnostics(run.runId, 'test-user')).toBeNull();
+    expect(
+      testDatabase(agent)
+        .prepare(
+          'SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 7',
+        )
+        .all()[0],
+    ).toEqual({ count: 1 });
   });
 
   it('removes temporary evidence after marking a run failed', () => {
@@ -166,9 +262,91 @@ describe('persistence document contract', () => {
     agent.storeBriefingCollection(runId, temporaryCollection(), 'test-user');
 
     expect(agent.failBriefingRun(runId, 'test-user')).toBe(true);
+    expect(agent.readBriefingDiagnostics(runId, 'test-user')).toEqual(
+      fixtureDiagnostics(),
+    );
+    expect(
+      JSON.stringify(agent.readBriefingDiagnostics(runId, 'test-user')),
+    ).not.toContain('Temporary article evidence.');
     expect(
       testDatabase(agent).prepare('SELECT * FROM briefing_candidates').all(),
     ).toEqual([]);
+  });
+
+  it('keeps source-scoped chat sessions and messages after a briefing is archived', () => {
+    const agent = inMemoryAgent();
+    const saved = agent.replacePreferences(examplePreferences, 0, 'test-user');
+
+    if (!saved.ok) throw new Error('Expected preferences to save.');
+    const runId = 'b20ccec8-e7d8-4b77-a118-008a37f0668e';
+    const briefing = briefingSchema.parse({
+      schemaVersion: 1,
+      runId,
+      date: '2026-09-19',
+      preferenceRevision: saved.preferences.revision,
+      completeness: 'complete',
+      limitations: [],
+      items: [
+        {
+          id: 'archived-story',
+          topicIds: ['ai'],
+          headline: 'A retained briefing story',
+          summary: 'A cited briefing summary.',
+          publishedAt: null,
+          citations: [
+            {
+              sourceUrl: 'https://example.com/archived-story',
+              publisher: 'Example',
+              evidenceTier: 'article',
+            },
+          ],
+        },
+      ],
+      publishedAt: '2026-09-19T00:00:00.000Z',
+    });
+
+    agent.startBriefingRun(
+      { runId, preferenceRevision: saved.preferences.revision },
+      'test-user',
+    );
+    agent.publishBriefing(briefing, 'test-user');
+    const session = agent.createChatSession(
+      runId,
+      'archived-story',
+      'test-user',
+    );
+
+    if (session === undefined) throw new Error('Expected a chat session.');
+    const append = agent as unknown as {
+      appendChatMessage: (
+        sessionId: string,
+        message: { id: string; role: 'user'; content: string },
+        userId: string,
+      ) => void;
+    };
+
+    append.appendChatMessage(
+      session.id,
+      { id: 'user-turn', role: 'user', content: 'What changed?' },
+      'test-user',
+    );
+
+    expect(agent.listChatSessions('test-user')).toMatchObject([
+      { id: session.id, briefingDate: '2026-09-19' },
+    ]);
+    expect(
+      agent.readChatSessionMessages(session.id, 'test-user'),
+    ).toMatchObject({
+      session: { storyHeadline: 'A retained briefing story' },
+      messages: [{ content: 'What changed?', role: 'user' }],
+    });
+    expect(
+      agent.readChatSessionMessages(session.id, 'other-user'),
+    ).toBeUndefined();
+    expect(agent.deleteChatSession(session.id, 'test-user')).toBe(true);
+    expect(
+      agent.readChatSessionMessages(session.id, 'test-user'),
+    ).toBeUndefined();
   });
 });
 
@@ -198,6 +376,7 @@ function temporaryCollection() {
       },
     ],
     failures: [],
+    diagnostics: fixtureDiagnostics(),
   };
 }
 
@@ -242,4 +421,34 @@ function inMemoryAgent(): PersonalBriefingAgent {
   (agent as unknown as { testDatabase: DatabaseSync }).testDatabase = database;
 
   return agent as unknown as PersonalBriefingAgent;
+}
+
+function fixtureDiagnostics(): BriefingDiagnostics {
+  return {
+    schemaVersion: 1,
+    collectedAt: '2026-09-19T07:00:00.000Z',
+    queries: [
+      {
+        topicId: 'ai',
+        provider: 'gdelt',
+        query: 'AI models',
+        status: 'ok',
+        returned: 1,
+        failureCount: 0,
+      },
+    ],
+    candidates: [
+      {
+        queryIndex: 0,
+        sourceUrl: 'https://publisher.example/article',
+        title: 'Example story',
+        publisher: 'Example',
+        engines: [],
+        publishedAt: null,
+        outcome: 'article',
+        evidenceCharacters: 27,
+        evidenceTruncated: false,
+      },
+    ],
+  };
 }
