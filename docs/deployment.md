@@ -126,20 +126,32 @@ check.
 
 ### 5. Add the allow policy
 
-The policy decides which identity may sign in, and the dashboard offers two shapes:
+The policy decides which identity may sign in. Three shapes are useful here:
 
-- **Cloudflare account members.** Works immediately with no domain and no identity
-  provider: the login is the Cloudflare account itself. Anyone you later add to the
-  account inherits access, so if that matters, pin the exact identity with the
-  `ACCESS_ALLOWED_IDENTITIES` binding — account membership alone then stops being
-  sufficient.
+- **Specific email addresses.** `Action: Allow` with `Include → Emails` listing the
+  addresses. This needs no domain: with the **One-time PIN** login method enabled,
+  Cloudflare mails a code to each address and only listed addresses can complete it,
+  so any address works, including a personal one that has nothing to do with your
+  account.
+- **Cloudflare account members.** Also needs no domain or identity provider: the
+  login is the Cloudflare account itself. Anyone you later add to the account
+  inherits access.
 - **An email domain.** Requires a domain added and verified in the account, so it is
-  not available for a `workers.dev`-only setup. Once a domain exists it is the better
-  long-term choice, covering every address at that domain without per-person edits.
+  not available for a `workers.dev`-only setup. Best once a domain exists, covering
+  every address at that domain without per-person edits.
 
-Either way: **Action: Allow**, and do not add a broader rule than you intend, because
-this is the only gate in front of the app. A service token, if you create one, needs
-its own **Include → Service Token** rule.
+Add `ACCESS_ALLOWED_IDENTITIES` (comma-separated emails, subjects, or service-token
+client ids) so a misconfigured policy cannot admit someone on its own — the Worker
+then checks identity after Access has already allowed the request.
+
+**Adding addresses currently shares one dataset.** The app is single-user: every
+authenticated identity maps to the same owner, so anyone allowed in can read and
+change the same preferences, briefings, chat history, and can trigger generation.
+Read-only sharing, per-person data, and roles are [DEPLOY-03 in the backlog](data-pipeline.md#9-improvement-backlog)
+work that is not implemented yet.
+
+A service token, if you create one for scripts, needs its own
+`Include → Service Token` rule.
 
 ### 6. (Optional) Create a service token for scripted access
 

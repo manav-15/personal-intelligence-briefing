@@ -1226,3 +1226,22 @@ Cloudflare account members works immediately with no domain, and an email-domain
 policy needs a domain added and verified in the account, which a `workers.dev`-only
 setup does not have. Also noted that `ACCESS_ALLOWED_IDENTITIES` prevents account
 membership alone from granting access. No code changed and nothing was deployed.
+
+### Access for selected email addresses (2026-09-21)
+
+**User request:** “What if I want to give access to select email addresses”
+
+**Material coding prompt:** Document the specific-address policy option accurately,
+including what it needs (the One-time PIN login method, no domain) and what it costs
+in this app's current single-user model.
+
+**Outcome:** `docs/deployment.md` now lists three policy shapes — specific email
+addresses, Cloudflare account members, and an email domain — with the requirements
+for each: specific addresses need the One-time PIN login method and no domain,
+account members need nothing extra, and an email domain needs a verified domain in
+the account. Recorded the consequence plainly: because every authenticated identity
+maps to the same owner, adding addresses grants full read and write access to the
+same preferences, briefings, chat history, and generation trigger; read-only
+sharing, per-person data, and roles remain DEPLOY-03 and are not implemented. Also
+noted that `ACCESS_ALLOWED_IDENTITIES` should pin those addresses so a
+misconfigured policy cannot admit someone on its own.
