@@ -1165,3 +1165,21 @@ block and no `SEARXNG` binding, the Workflow opts in only under
 `SEARXNG_BASE_URL`, and the dry-run validates in under a second with three
 bindings and no image build — so no paid plan is needed. `npm run check` passes
 202 tests. Nothing was deployed.
+
+### Deploy preparation and the Access-application ordering (2026-09-21)
+
+**User context:** “zero trsut needs an application to be created”
+
+**Material coding prompt:** Make the deployment a single reproducible command and
+resolve the ordering problem the user hit: Zero Trust cannot admit anything
+without an Access application, and an application cannot be scoped to a Worker
+that has not been deployed. Document both routes — the account-level switch that
+works before the Worker exists, and the per-Worker toggle that needs it deployed.
+
+**Outcome:** Added `npm run deploy` and `npm run deploy:dry-run` (build plus
+`wrangler deploy --config wrangler.jsonc`), set `workers_dev` to `true` for the
+free `workers.dev` hostname while leaving `preview_urls` false, and documented the
+two Access routes with the AUD tag as the value that completes the wiring.
+`npm run deploy:dry-run` validates in about four seconds with three bindings,
+no container image, and no Docker. `npm run check` passes 202 tests. Nothing was
+deployed.

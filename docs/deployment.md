@@ -81,21 +81,28 @@ Whichever you choose, the whole hostname sits behind Access, so static assets,
 
 ### 4. Create the Access application
 
-**For a `workers.dev` hostname (Option A)** the shortest path is the Worker-level
-toggle, which creates and manages the Access application for you:
+An Access application must exist before anything can authenticate — Zero Trust
+has no way to admit a request without one. There are two routes, and they differ
+in whether the Worker has to exist first.
 
-1. **Workers & Pages → your Worker → Settings → Domains & Routes**, or the
-   **Access** tab on the Worker overview.
-2. Enable **Protect with Access** for **production** (Protection applies to
-   production traffic; leave previews alone because `preview_urls` is off).
-3. Choose the login method from step 3 and add the allow rule from step 5.
-4. Note the AUD tag from the application Access created — it appears under
-   **Zero Trust → Access controls → Applications**. It is still needed, because
-   the Worker verifies the token itself.
+**Route 1 — account-level, works before deploying.** In the Zero Trust dashboard
+open **Workers & Pages** and enable the **Protect all Workers** card, choosing
+**All traffic**. This turns on Access for the account's `workers.dev` workers and
+creates the application for you, so it is the quickest way to unblock a
+deployment that does not exist yet. The trade-off is breadth: it covers every
+Worker and preview URL in the account, not just this one. Previews should stay
+unprotected here only because `preview_urls` is `false` for this Worker.
 
-Zero Trust also offers **Workers & Pages → Protect all Workers**, which applies a
-default policy to every Worker and preview URL in the account. That is convenient
-but broader than this app needs; protecting the single Worker is enough.
+**Route 2 — per-Worker, needs the Worker deployed first.** Once the Worker
+exists, open **Workers & Pages → your Worker → Settings → Domains & Routes** (or
+its **Access** tab) and enable **Protect with Access** for **production**. This
+creates a narrower, single-Worker application.
+
+Either route lands in the same place: an application under **Zero Trust → Access
+controls → Applications**. Open it, add the allow policy from step 5 if it was
+not created with one, and copy its **Application Audience (AUD) Tag** — a
+32-character value the Worker checks. Without that tag in `ACCESS_AUD` the Worker
+rejects every request by design.
 
 **For a custom domain (Option B),** create it directly:
 

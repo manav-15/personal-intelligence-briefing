@@ -367,6 +367,17 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Prepared the deployment so it is one command, after review
+  found that Access cannot admit anything until an application exists — and an
+  application cannot be scoped to a Worker that has not been deployed. Added
+  `npm run deploy` and `npm run deploy:dry-run` (build plus
+  `wrangler deploy --config wrangler.jsonc`), set `workers_dev` to `true` for the
+  free `workers.dev` hostname while keeping `preview_urls` false, and documented
+  both Access routes in `docs/deployment.md`: the account-level "Protect all
+  Workers" switch, which works before the Worker exists, and the narrower
+  per-Worker toggle, which needs it deployed. `npm run deploy:dry-run` validates
+  in about four seconds with three bindings and no container image. Nothing was
+  deployed.
 - **2026-09-21:** Implemented the Access verification slice and removed the only
   paid-plan dependency, awaiting review. New `src/server/access.ts` resolves one
   request identity from `Cf-Access-Jwt-Assertion` or the `CF_Authorization`
@@ -1068,11 +1079,10 @@ Remaining gaps before a hosted deployment:
    require a verified JWT (see P2 detail). What is left is account-level: create
    the Access application, then set `ACCESS_AUD`. Until that value exists the
    Worker rejects every request by design.
-2. **The deploy command needs a flag.** The Vite plugin redirects Wrangler to a
-   generated `dist/<worker>/wrangler.json` whose relative paths do not all
-   resolve, so a plain `npx wrangler deploy` fails. `--config wrangler.jsonc`
-   works (dry-run verified) and is documented, but a `deploy` npm script is still
-   owed.
+2. **Deploy mechanics are ready.** `npm run deploy` and `npm run deploy:dry-run`
+   wrap the build plus `wrangler deploy --config wrangler.jsonc`; the flag is
+   required because the Vite plugin redirects Wrangler to a generated
+   `dist/<worker>/wrangler.json` whose relative paths do not all resolve.
 3. **Operational blind spots.** No `observability` block, so hosted logs are not
    retained; nothing measures hosted usage against the sub-USD-10–20 target
    (COST-01); and there is still no deletion path for briefings, retained
@@ -1080,12 +1090,11 @@ Remaining gaps before a hosted deployment:
 
 ### Phases
 
-**P1 — Pre-flight and deploy mechanics (partly done).** The README now documents
-the real command and the dry-run validates the deployment. Still owed: a `deploy`
-npm script wrapping `npm run build && wrangler deploy --config wrangler.jsonc`,
-an `observability` block, and a check that a production configuration cannot set
-`SEARXNG_BASE_URL` and silently bypass the intended channel list. _Acceptance:_
-`npm run deploy --dry-run` succeeds and resolves every binding.
+**P1 — Pre-flight and deploy mechanics (done).** `workers_dev` is `true` so the
+free `workers.dev` address is the app's hostname, `preview_urls` stays `false`,
+and `npm run deploy` / `npm run deploy:dry-run` wrap the real command. Still
+owed: an `observability` block, and a check that a production configuration
+cannot set `SEARXNG_BASE_URL` and silently change the channel list.
 
 **P2 — Access protection: code implemented, application pending (DEPLOY-02).**
 `src/server/access.ts` verifies the Access JWT and `requireIdentity` guards every

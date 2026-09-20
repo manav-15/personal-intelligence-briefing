@@ -4,7 +4,9 @@
   "main": "src/server/index.ts",
   "compatibility_date": "2026-09-16",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": false,
+  // The app is served from the free workers.dev address; preview URLs stay off
+  // so there is no second, easily-forgotten surface to protect.
+  "workers_dev": true,
   "preview_urls": false,
   // Access verifies every request. ACCESS_AUD is added once the Access
   // application exists; until then the Worker refuses all requests.
