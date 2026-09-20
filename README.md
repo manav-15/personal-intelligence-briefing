@@ -164,19 +164,21 @@ endpoint without changing Worker code or local application data.
 
 ## Deployment
 
-Deployment is deliberately deferred until the Agent, Durable Object, Workflow,
-and Access bindings exist. The Worker configuration already declares a private
-SearXNG Cloudflare Container: one Durable Object-managed instance using the
-same pinned image and settings as local Docker. It has no public route; the
-Worker reaches it through its `SEARXNG` binding. Before the first deployment,
-set its runtime secret without putting it in source control:
+The Worker is ready to host on the Workers **Free** plan. It stores preferences,
+briefings, chat, and retained evidence in Durable Object SQLite, generates
+through a Workflow, and deploys no container: SearXNG is off, so discovery runs
+the decoded Google News RSS channel plus GDELT. `infra/searxng/` remains for
+local Docker verification through `SEARXNG_BASE_URL`; re-enabling the hosted
+SearXNG path means restoring the container binding and the paid plan.
 
-```sh
-npx wrangler secret put SEARXNG_SECRET
-```
+Every API and Agent request must carry a valid Cloudflare Access JWT. The Worker
+verifies it itself (RS256 against the team's JWKS, with the issuer, audience, and
+expiry checked) and refuses everything else, so a deployment is safe before its
+Access application exists — it simply rejects until `ACCESS_AUD` is configured.
+The team domain is already set; the AUD tag is added once the Access application
+exists.
 
-Deploy with the repository configuration, and validate it without publishing
-first:
+Deploy with the repository configuration, validating first:
 
 ```sh
 npm run build
@@ -185,20 +187,14 @@ npx wrangler deploy --config wrangler.jsonc
 ```
 
 `--config wrangler.jsonc` is required: the Vite plugin redirects Wrangler to a
-generated `dist/<worker>/wrangler.json`, where the assets directory is rewritten
-relative to that file but the container's Dockerfile path is not, so a plain
-`npx wrangler deploy` aborts on a missing `dist/…/infra/searxng/Dockerfile`.
+generated `dist/<worker>/wrangler.json` whose relative paths do not all resolve,
+so a plain `npx wrangler deploy` fails. Set `workers_dev` to `true` for the free
+`workers.dev` address (or add a custom domain route) at deploy time.
 
-Do not set `SEARXNG_BASE_URL` in deployment: it exists for local Docker and, when
-present, the Worker uses it instead of the private container binding. `npm run
-dev` does not deploy cloud resources. Local Docker remains the supported way to
-inspect search and article evidence.
-
-Nothing is exposed by default (`workers_dev` and `preview_urls` are false), and
-the API has no authentication yet, so **Access protection must be configured
-before the first hostname is added**. The ordered dashboard and command steps
-are in [the deployment guide](docs/deployment.md); the phased increment is in
-[`docs/implementation-plan.md`](docs/implementation-plan.md).
+Nothing is exposed by default: `workers_dev` and `preview_urls` are both false.
+The ordered dashboard and command steps, including the Access setup and the
+values each side needs, are in [the deployment guide](docs/deployment.md); the
+phased increment is in [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## Evidence limitations and planned improvements
 

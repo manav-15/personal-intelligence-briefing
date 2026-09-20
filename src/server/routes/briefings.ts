@@ -6,6 +6,7 @@ import {
   diagnosticEnabled,
   allowMethods,
   noStore,
+  requireIdentity,
   sameOrigin,
   type HttpEnv,
 } from './policy';
@@ -13,8 +14,6 @@ import {
 type BriefingsHttpEnv = HttpEnv & {
   Variables: { binding: PreferencesAgentEnv['PERSONAL_BRIEFING'] };
 };
-
-const localUserId = 'single-user';
 
 /** Authenticated briefing reads, generation, and run-status polling. */
 export const briefingsRoutes = new Hono<BriefingsHttpEnv>();
@@ -33,13 +32,22 @@ briefingsRoutes.use(
   sameOrigin('Cross-origin briefing access is not allowed.'),
 );
 
+briefingsRoutes.use(
+  '/runs/:runId/diagnostics',
+  diagnosticEnabled(
+    'PREFERENCES_DIAGNOSTICS_ENABLED',
+    'Briefing diagnostics are disabled.',
+  ),
+);
+briefingsRoutes.use('*', requireIdentity);
+
 briefingsRoutes.all('/today', allowMethods('GET'));
 
 briefingsRoutes.get('/today', async (c) => {
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
 
-  const briefing = await agent.readTodayBriefing(localUserId);
+  const briefing = await agent.readTodayBriefing(c.get('userId'));
 
   return c.json({ briefing: briefing ?? null });
 });
@@ -48,9 +56,11 @@ briefingsRoutes.all('/archive', allowMethods('GET'));
 
 briefingsRoutes.get('/archive', async (c) => {
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
 
-  return c.json({ briefings: await agent.listBriefingArchive(localUserId) });
+  return c.json({
+    briefings: await agent.listBriefingArchive(c.get('userId')),
+  });
 });
 
 briefingsRoutes.all('/generate', allowMethods('POST'));
@@ -59,8 +69,8 @@ briefingsRoutes.post('/generate', async (c) => {
   if (c.env.BRIEFING_WORKFLOW === undefined)
     return c.json({ error: 'Briefing Workflow is not configured.' }, 503);
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
-  const reserved = await agent.reserveManualBriefingRun(localUserId);
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+  const reserved = await agent.reserveManualBriefingRun(c.get('userId'));
 
   if (!reserved.ok) return c.json({ error: reserved.error }, 409);
 
@@ -70,14 +80,14 @@ briefingsRoutes.post('/generate', async (c) => {
         id: reserved.runId,
         params: {
           runId: reserved.runId,
-          userId: localUserId,
+          userId: c.get('userId'),
           date: reserved.date,
         },
       });
     } catch {
       await agent.failBriefingRun(
         reserved.runId,
-        localUserId,
+        c.get('userId'),
         'The briefing workflow could not be started.',
       );
 
@@ -97,11 +107,16 @@ briefingsRoutes.get('/runs/:runId', async (c) => {
 
   if (!runId.success) return c.json({ error: 'Invalid briefing run ID.' }, 400);
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
 
-  await agent.expireBriefingRuns(localUserId);
-  await reconcileWorkflow(c.env.BRIEFING_WORKFLOW, agent, runId.data);
-  const status = await agent.readBriefingRunStatus(runId.data, localUserId);
+  await agent.expireBriefingRuns(c.get('userId'));
+  await reconcileWorkflow(
+    c.env.BRIEFING_WORKFLOW,
+    agent,
+    runId.data,
+    c.get('userId'),
+  );
+  const status = await agent.readBriefingRunStatus(runId.data, c.get('userId'));
 
   if (status === undefined)
     return c.json({ error: 'Briefing run not found.' }, 404);
@@ -112,15 +127,20 @@ briefingsRoutes.get('/runs/:runId', async (c) => {
 briefingsRoutes.all('/current-run', allowMethods('GET'));
 briefingsRoutes.get('/current-run', async (c) => {
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
-  const latest = await agent.readLatestBriefingRun(localUserId);
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+  const latest = await agent.readLatestBriefingRun(c.get('userId'));
 
   if (latest?.status === 'running')
-    await reconcileWorkflow(c.env.BRIEFING_WORKFLOW, agent, latest.runId);
+    await reconcileWorkflow(
+      c.env.BRIEFING_WORKFLOW,
+      agent,
+      latest.runId,
+      c.get('userId'),
+    );
   const run =
     latest === undefined
       ? undefined
-      : await agent.readBriefingRunStatus(latest.runId, localUserId);
+      : await agent.readBriefingRunStatus(latest.runId, c.get('userId'));
 
   return c.json({ run: run ?? null });
 });
@@ -133,8 +153,8 @@ briefingsRoutes.get('/archive/:runId', async (c) => {
 
   if (!runId.success) return c.json({ error: 'Invalid briefing ID.' }, 400);
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
-  const briefing = await agent.readBriefingByRun(runId.data, localUserId);
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+  const briefing = await agent.readBriefingByRun(runId.data, c.get('userId'));
 
   if (briefing === undefined)
     return c.json({ error: 'Briefing not found.' }, 404);
@@ -146,6 +166,7 @@ async function reconcileWorkflow(
   workflow: HttpEnv['Bindings']['BRIEFING_WORKFLOW'],
   agent: ReturnType<PreferencesAgentEnv['PERSONAL_BRIEFING']['get']>,
   runId: string,
+  userId: string,
 ) {
   if (workflow === undefined) return;
 
@@ -156,7 +177,7 @@ async function reconcileWorkflow(
     if (['errored', 'terminated', 'complete'].includes(status.status)) {
       await agent.failBriefingRun(
         runId,
-        localUserId,
+        userId,
         'Generation stopped before publication. Your previous editions are safe; please try again.',
       );
     }
@@ -165,13 +186,6 @@ async function reconcileWorkflow(
   }
 }
 
-briefingsRoutes.use(
-  '/runs/:runId/diagnostics',
-  diagnosticEnabled(
-    'PREFERENCES_DIAGNOSTICS_ENABLED',
-    'Briefing diagnostics are disabled.',
-  ),
-);
 briefingsRoutes.all('/runs/:runId/diagnostics', allowMethods('GET'));
 briefingsRoutes.get('/runs/:runId/diagnostics', async (c) => {
   const runId = briefingRunStatusResponseSchema.shape.runId.safeParse(
@@ -180,15 +194,15 @@ briefingsRoutes.get('/runs/:runId/diagnostics', async (c) => {
 
   if (!runId.success) return c.json({ error: 'Invalid briefing run ID.' }, 400);
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
   const diagnostics = await agent.readBriefingDiagnostics(
     runId.data,
-    localUserId,
+    c.get('userId'),
   );
 
   if (diagnostics === undefined)
     return c.json({ error: 'Briefing run not found.' }, 404);
-  const briefing = await agent.readBriefingByRun(runId.data, localUserId);
+  const briefing = await agent.readBriefingByRun(runId.data, c.get('userId'));
 
   return c.json(
     briefingDiagnosticsResponseSchema.parse({

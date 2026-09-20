@@ -6,25 +6,33 @@ is deliberately out of scope (see `docs/implementation-plan.md`, Increment 6).
 
 ## Readiness prerequisites
 
-| Requirement                                                                                                                     | Why                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Cloudflare account with a **Workers Paid** plan                                                                                 | Containers and Workflows are paid-plan features; Durable Object SQLite usage is billed on top |
-| A hostname — either the free `<worker>.<account>.workers.dev` address (no zone needed) or a custom domain in a zone you control | Access protects the hostname the app is served from                                           |
-| Zero Trust enabled (free tier)                                                                                                  | Covers up to 50 seats; one user is free                                                       |
-| `npx wrangler login` completed                                                                                                  | Non-interactive deploys can use a scoped API token instead                                    |
-| **Docker Desktop running**                                                                                                      | `wrangler deploy` builds the SearXNG container image locally and pushes it during deploy      |
-| Node 24.x                                                                                                                       | `npm run check` and the build                                                                 |
+| Requirement                                                                                                              | Why                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Cloudflare account on the **Workers Free** plan                                                                          | Nothing in this deployment needs a paid feature: Durable Objects with SQLite and Workflows run on Free |
+| **Zero Trust enabled** with a team domain                                                                                | Its JWT is the only thing that admits a request; configured as `briefing-agent.cloudflareaccess.com`   |
+| A hostname — the free `<worker>.<account>.workers.dev` address (no zone needed) or a custom domain in a zone you control | Access protects the hostname the app is served from                                                    |
+| `npx wrangler login` completed                                                                                           | Non-interactive deploys can use a scoped API token instead                                             |
+| Node 24.x                                                                                                                | `npm run check` and the build                                                                          |
+
+No paid plan is required because **SearXNG is not deployed**. Collection runs the
+decoded Google News RSS channel plus GDELT, so the deployment contains no
+container and no container secret. The private-container SearXNG path is parked:
+`infra/searxng/` stays for local Docker verification through the
+`SEARXNG_BASE_URL` override, and re-enabling it means restoring the container
+binding and the paid plan, not rewriting code.
 
 ## Order of operations (and why)
 
-Do the code work first, deploy second, and attach Access last:
+The auth code is already in place, so the remaining order is deploy, then attach
+Access:
 
-1. **Land the fail-closed auth code** (Increment 6, phase P2). Until Access exists
-   every request is rejected — a Worker that refuses requests without a valid
-   Access JWT cannot be abused even if someone finds the hostname.
-2. **Deploy** with a hostname: `workers.dev` or a custom domain route.
-3. **Create the Access application.** The app immediately starts issuing tokens,
-   so the browser can then authenticate.
+1. **Deploy** with a hostname: `workers.dev` or a custom domain route. The Worker
+   refuses every request that lacks a valid Access JWT, so this is safe even
+   before Access exists.
+2. **Create the Access application** and its allow policy.
+3. **Set `ACCESS_AUD`** to the application's AUD tag and redeploy the
+   configuration. Until that value exists every request is rejected with 401 —
+   that is the fail-closed behaviour, not a fault.
 
 This ordering is what makes the setup safe: there is no window in which the API
 is reachable and unauthenticated. Creating the Access application before the
@@ -136,29 +144,25 @@ that a service-token JWT carries an **empty `sub`**; the identity lives in
 Run these from the repository root once the auth code and hostname are settled.
 
 ```sh
-# 1. Confirm the account and zone
+# 1. Confirm the account
 npx wrangler whoami
 
-# 2. Store the container's runtime secret (never in source control)
-npx wrangler secret put SEARXNG_SECRET
-
-# 3. Validate the deployment without publishing anything
+# 2. Validate the deployment without publishing anything
 npm run build
 npx wrangler deploy --dry-run --config wrangler.jsonc
 
-# 4. Deploy
+# 3. Deploy
 npx wrangler deploy --config wrangler.jsonc
 ```
 
 `--config wrangler.jsonc` is required. The Vite plugin redirects Wrangler to a
 generated `dist/<worker>/wrangler.json`, where the assets directory is rewritten
-relative to that file but the container's Dockerfile path is not, so a plain
-`npx wrangler deploy` aborts on a missing `dist/…/infra/searxng/Dockerfile`.
+relative to that file but other relative paths are not, so a plain
+`npx wrangler deploy` fails on a missing file.
 
 Before deploying, settle the hostname in `wrangler.jsonc`: either set
 `workers_dev` to `true` for the free `workers.dev` address, or add the custom
-domain route. Do **not** set `SEARXNG_BASE_URL` in deployment — when present, the
-Worker uses it instead of the private container binding.
+domain route.
 
 ## Post-deploy verification
 
@@ -169,22 +173,22 @@ Worker uses it instead of the private container binding.
    with Access and the retained evidence is present.
 4. `/api/inspection` and the preferences diagnostic return 404 in deployment;
    both are local-only bindings.
-5. One manual generation publishes an edition **and its duration is recorded**:
-   the container sleeps after 10 minutes, so the first search after an idle
-   period pays a cold start inside the Workflow's 10-minute collection step.
-6. Engine coverage is measured from the hosted container: which engines respond,
-   how many results carry dates, and whether the egress IP is treated differently
-   than localhost. This is the main unknown for hosted briefing quality.
+5. One manual generation publishes an edition and its duration is recorded. With
+   no container there is no cold start to pay, so this measures only search,
+   article retrieval, and the model call.
+6. Engine coverage is measured from the hosted Worker: which of the Google News
+   RSS and GDELT channels respond, how many results carry publication dates, and
+   whether the hosting egress IP is treated differently than localhost. This is
+   the main unknown for hosted briefing quality.
 
 ## Values the Worker configuration needs
 
-| Value              | Where it comes from                                     | Purpose                                                                      |
-| ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Team domain        | Zero Trust team domain                                  | JWT issuer and JWKS base URL                                                 |
-| AUD tag            | Access application overview                             | Audience claim check                                                         |
-| Allowed identities | The email (and service-token client ids) you authorised | Defence in depth beyond the Access policy                                    |
-| Hostname           | The custom domain you chose                             | Worker route and Access application                                          |
-| `SEARXNG_SECRET`   | Generate a long random value                            | Container runtime secret; local Docker keeps its own in `infra/searxng/.env` |
+| Value              | Where it comes from                                                                  | Purpose                                                         |
+| ------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Team domain        | Zero Trust team domain — `briefing-agent.cloudflareaccess.com` is already configured | JWT issuer and JWKS base URL                                    |
+| AUD tag            | The Access application's overview page — **still needed**                            | Audience claim check; every request is rejected until it is set |
+| Allowed identities | The email (and any service-token client ids) you authorised                          | Defence in depth beyond the Access policy                       |
+| Hostname           | `workers.dev` or the custom domain you chose                                         | Worker route and Access application                             |
 
 ## Current limitations
 

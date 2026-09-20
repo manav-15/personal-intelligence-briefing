@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "preview_urls": false,
+  // Access verifies every request. ACCESS_AUD is added once the Access
+  // application exists; until then the Worker refuses all requests.
+  "vars": { "ACCESS_TEAM_DOMAIN": "briefing-agent.cloudflareaccess.com" },
   "ai": { "binding": "AI", "remote": true },
   "workflows": [
     {
@@ -22,28 +25,9 @@
   "durable_objects": {
     "bindings": [
       { "name": "PERSONAL_BRIEFING", "class_name": "PersonalBriefingAgent" },
-      { "name": "SEARXNG", "class_name": "SearxngContainer" },
     ],
   },
-  "containers": [
-    {
-      "name": "searxng",
-      "class_name": "SearxngContainer",
-      "scheduling_policy": "durable_object",
-      "images": {
-        "default": {
-          "dockerfile": "./infra/searxng/Dockerfile",
-          "build_context": "./infra/searxng",
-        },
-      },
-    },
-  ],
   "exports": {
     "PersonalBriefingAgent": { "type": "durable-object", "storage": "sqlite" },
-    "SearxngContainer": {
-      "type": "durable-object",
-      "storage": "sqlite",
-      "container": "searxng",
-    },
   },
 }

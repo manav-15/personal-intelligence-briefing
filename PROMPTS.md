@@ -1137,3 +1137,31 @@ recorded that `ctx.access.getIdentity()` cannot be relied on here: with Static
 Assets an internal router sits in front of the script and does not pass that
 context through, so the Worker keeps its own JWT verification. No code changed and
 nothing was deployed.
+
+### Access verification implemented; SearXNG disabled (2026-09-21)
+
+**User context:** “briefing-agent.cloudflareaccess.com is the team domain. why do
+we need workers paid plan. npx wrangler login is done i think”
+
+**User interjection (mid-implementation):** “Let's disable searXNG for now - and
+we wont need containers for now”
+
+**Material coding prompt:** Implement the Cloudflare Access verification the plan
+specified — one deep module that resolves the request identity, middleware that
+guards every API and Agent route, the hardcoded local user replaced, and a
+deterministic test suite built on an in-process RSA keypair and a fixture JWKS.
+Then, by user decision, disable SearXNG: remove the container from the deployment
+configuration and its binding and secret, so the app hosts on the Workers Free
+plan, keeping the container code and local Docker setup parked for later.
+
+**Outcome:** `src/server/access.ts` and `requireIdentity` now guard
+`/api/preferences`, `/api/briefings`, `/api/chats`, and `/agents/*`;
+`localUserId` is gone from every route and the Agent route refuses an instance
+name that is not the resolved owner. Twelve tests cover acceptance, cookie
+fallback, wrong audience, wrong issuer, expiry, tampering, `alg: none`, key
+rotation, an unreachable key set, service-token mapping, the allowlist, and the
+local-only placeholder. SearXNG is off: `wrangler.jsonc` has no `containers`
+block and no `SEARXNG` binding, the Workflow opts in only under
+`SEARXNG_BASE_URL`, and the dry-run validates in under a second with three
+bindings and no image build — so no paid plan is needed. `npm run check` passes
+202 tests. Nothing was deployed.

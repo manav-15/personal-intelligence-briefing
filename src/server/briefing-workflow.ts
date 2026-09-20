@@ -5,11 +5,6 @@ import {
 } from 'cloudflare:workers';
 import { collectBriefingCandidates } from './briefing-collection';
 import type { BriefingCompositionResult } from './briefing-composition';
-import {
-  createSearxngContainerFetcher,
-  searxngContainerBaseUrl,
-  type SearxngContainer,
-} from './searxng-container';
 import type { PersonalBriefingAgent } from './preferences-agent';
 
 /** Serializable parameters for one manually requested briefing workflow. */
@@ -19,10 +14,15 @@ export type BriefingWorkflowParams = {
   date: string;
 };
 
-/** Bindings used by the durable manual briefing workflow. */
+/**
+ * Bindings used by the durable manual briefing workflow.
+ *
+ * SearXNG is off by default: collection runs the decoded Google News RSS channel
+ * and GDELT. Setting `SEARXNG_BASE_URL` opts a local run back into a private
+ * SearXNG instance; no container binding is required or deployed.
+ */
 export type BriefingWorkflowEnv = {
   PERSONAL_BRIEFING: DurableObjectNamespace<PersonalBriefingAgent>;
-  SEARXNG: DurableObjectNamespace<SearxngContainer>;
   SEARXNG_BASE_URL?: string;
 };
 
@@ -55,9 +55,7 @@ export class BriefingWorkflow extends WorkflowEntrypoint<
           const collection = await collectBriefingCandidates(
             snapshot,
             fetch,
-            {
-              searxng: searxngProvider(this.env),
-            },
+            searchProviders(this.env),
             new Date(event.timestamp),
           );
           const stored = await agent.storeBriefingCollection(
@@ -130,12 +128,9 @@ export class BriefingWorkflow extends WorkflowEntrypoint<
   }
 }
 
-function searxngProvider(env: BriefingWorkflowEnv) {
-  if (env.SEARXNG_BASE_URL !== undefined)
-    return { baseUrl: env.SEARXNG_BASE_URL, fetcher: fetch };
-
-  return {
-    baseUrl: searxngContainerBaseUrl,
-    fetcher: createSearxngContainerFetcher(env.SEARXNG),
-  };
+/** Enables the SearXNG channel only when a local instance is explicitly set. */
+function searchProviders(env: BriefingWorkflowEnv) {
+  return env.SEARXNG_BASE_URL === undefined
+    ? {}
+    : { searxng: { baseUrl: env.SEARXNG_BASE_URL, fetcher: fetch } };
 }

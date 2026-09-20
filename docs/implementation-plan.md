@@ -367,6 +367,28 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Implemented the Access verification slice and removed the only
+  paid-plan dependency, awaiting review. New `src/server/access.ts` resolves one
+  request identity from `Cf-Access-Jwt-Assertion` or the `CF_Authorization`
+  cookie: RS256 verified with Web Crypto against the team's JWKS (cached, with a
+  single refresh on an unknown key id), exact issuer match, audience check, expiry
+  with five-second skew, and an optional identity allowlist that also matches
+  service-token `common_name`. It fails closed: a missing token, a bad signature,
+  another application's audience, an expired token, an unreachable key set, or an
+  unconfigured deployment all produce a bounded 401. `requireIdentity` guards the
+  preferences, briefings, and chats routes plus `/agents/*`, the hardcoded
+  `localUserId` is gone from every route, the Agent route refuses an instance name
+  that is not the resolved owner, and the local `single-user` placeholder survives
+  only under the local diagnostic binding. Twelve deterministic tests cover the
+  acceptance set with an in-process RSA keypair and a fixture JWKS.
+  By user decision SearXNG is disabled for now, which removes the container from
+  `wrangler.jsonc` together with its Durable Object binding and secret and drops
+  the Workers Paid requirement; collection runs the decoded Google News RSS
+  channel plus GDELT, the Workflow opts in only under `SEARXNG_BASE_URL`, and
+  `infra/searxng/` plus the container class are parked for local Docker
+  verification. `--config wrangler.jsonc` dry-run now validates in under a second
+  with three bindings and no image build. `npm run check` passes 22 files and 202
+  tests. No cloud resources were created and nothing was deployed.
 - **2026-09-21:** Recorded two hosting decisions from review. Hostname: start on
   the free `workers.dev` address, which needs no zone, so Access is the only
   account-level setup required; `workers_dev` flips to `true` and `preview_urls`
@@ -1018,56 +1040,70 @@ explicitly out of scope for this increment.
 
 ### Readiness assessment
 
-Proven by `npx wrangler deploy --dry-run --config wrangler.jsonc`: the container
-image builds from the pinned `infra/searxng/Dockerfile` with the shared settings,
-five client assets are read, the Worker bundles to 2.97 MB (582 KB gzip), and
-every binding resolves — `PERSONAL_BRIEFING` and `SEARXNG` Durable Objects,
-`BRIEFING_WORKFLOW`, and `AI`. Migrations 1–9 were separately verified on a
-deleted state directory, and the first generation on that fresh database
-published a four-item edition, so schema bootstrapping is not a deployment risk.
+Proven by `npx wrangler deploy --dry-run --config wrangler.jsonc`: five client
+assets are read, the Worker bundles, and the bindings resolve —
+`PERSONAL_BRIEFING` (Durable Object), `BRIEFING_WORKFLOW`, and `AI`. No container
+is built, so the deploy needs no Docker and the deployment fits the Workers Free
+plan. Migrations 1–9 were separately verified on a deleted state directory, and
+the first generation on that fresh database published a four-item edition, so
+schema bootstrapping is not a deployment risk.
 
-Runtime paths are already environment-aware: `searxngProvider` uses
-`SEARXNG_BASE_URL` locally and the private container binding otherwise, and both
-diagnostic surfaces (`INSPECTION_ENABLED`, `PREFERENCES_DIAGNOSTICS_ENABLED`)
-return 404 unless their binding is exactly `true`, so neither ships enabled.
+**SearXNG is disabled for now, by user decision.** Collection runs the decoded
+Google News RSS channel plus GDELT, which is what removes the paid-plan
+requirement: the only feature that needed Workers Paid was the container. The
+code is parked rather than deleted — `infra/searxng/` and `searxng-container.ts`
+remain for local Docker verification, the Workflow opts in only when
+`SEARXNG_BASE_URL` is set, and the container is gone from `wrangler.jsonc` along
+with its Durable Object binding and secret. Re-enabling the hosted path means
+restoring that binding and the paid plan.
 
-Three gaps stand between this and a private hosted deployment:
+Runtime paths remain environment-aware: both diagnostic surfaces
+(`INSPECTION_ENABLED`, `PREFERENCES_DIAGNOSTICS_ENABLED`) return 404 unless their
+binding is exactly `true`, so neither ships enabled.
 
-1. **No authentication exists.** Every route and the Agent use a hardcoded
-   `localUserId = 'single-user'` (`routes/briefings.ts:17` and siblings), and
-   `/agents/*` is served openly. `workers_dev` and `preview_urls` are both false,
-   so nothing is reachable today — but the first hostname added would expose one
-   user's preferences, briefings, chat, and the generate trigger to anyone.
-   Access protection is therefore a _prerequisite_ for exposure, not a follow-up
-   (DEPLOY-02).
-2. **The documented deploy command fails.** `npx wrangler deploy` resolves a
-   plugin-generated config at `dist/<worker>/wrangler.json` whose `assets`
-   directory is rewritten to `../client` while `containers[].images.default
-.dockerfile` is not, so it looks for `dist/…/infra/searxng/Dockerfile` and
-   aborts. Deploying with the original config works (`--config wrangler.jsonc`,
-   verified by dry-run) and must be scripted and documented.
+Remaining gaps before a hosted deployment:
+
+1. **Authentication is implemented but not yet wired to a live Access
+   application.** `src/server/access.ts` plus the route and Agent middleware now
+   require a verified JWT (see P2 detail). What is left is account-level: create
+   the Access application, then set `ACCESS_AUD`. Until that value exists the
+   Worker rejects every request by design.
+2. **The deploy command needs a flag.** The Vite plugin redirects Wrangler to a
+   generated `dist/<worker>/wrangler.json` whose relative paths do not all
+   resolve, so a plain `npx wrangler deploy` fails. `--config wrangler.jsonc`
+   works (dry-run verified) and is documented, but a `deploy` npm script is still
+   owed.
 3. **Operational blind spots.** No `observability` block, so hosted logs are not
-   retained; `SEARXNG_SECRET` is required by the container but only exists as a
-   local Docker value; nothing measures hosted usage against the sub-USD-10–20
-   target (COST-01); and there is still no deletion path for briefings, retained
+   retained; nothing measures hosted usage against the sub-USD-10–20 target
+   (COST-01); and there is still no deletion path for briefings, retained
    evidence, or the unimplemented 90-day deduplication memory (STORE-01).
 
 ### Phases
 
-**P1 — Pre-flight and deploy mechanics (no cloud changes).** Add a `deploy`
+**P1 — Pre-flight and deploy mechanics (partly done).** The README now documents
+the real command and the dry-run validates the deployment. Still owed: a `deploy`
 npm script wrapping `npm run build && wrangler deploy --config wrangler.jsonc`,
-correct the README, add an `observability` block, and reject a production
-configuration that sets `SEARXNG_BASE_URL` so the container cannot be bypassed
-silently. _Acceptance:_ `npm run deploy --dry-run` succeeds and resolves all four
-bindings plus the container image; README documents the real command.
+an `observability` block, and a check that a production configuration cannot set
+`SEARXNG_BASE_URL` and silently bypass the intended channel list. _Acceptance:_
+`npm run deploy --dry-run` succeeds and resolves every binding.
 
-**P2 — Access protection before exposure (DEPLOY-02).** Put an Access
-application, a single-identity policy, and cryptographic JWT verification in
-front of every route before a hostname exists. Full design below.
-_Acceptance:_ an unauthenticated API or Agent request is rejected; a token from a
-different Access application, an expired token, or a tampered signature is
-rejected; local development still works without Access; and a service token can
-drive scripted verification against the same stored data.
+**P2 — Access protection: code implemented, application pending (DEPLOY-02).**
+`src/server/access.ts` verifies the Access JWT and `requireIdentity` guards every
+API route and the Agent route; the hardcoded `localUserId` is gone from all
+routes. What remains is account-level: create the Access application, then set
+`ACCESS_AUD` (`ACCESS_TEAM_DOMAIN` is already configured as
+`briefing-agent.cloudflareaccess.com`). Full design below. _Acceptance when the
+application exists:_ a browser session signs in and works; a token from another
+Access application, an expired token, or a tampered signature is rejected; and
+local development still works without Access.
+
+**P3 — First deployment (DEPLOY-01).** Deploy with `--config wrangler.jsonc` and
+verify the deployed Worker against the hosted channels. No container and no
+container secret are involved. _Acceptance:_ `/api/health` is unreachable without
+an Access session, one manual generation publishes an edition from the hosted
+Worker, diagnostic routes return 404, and hosted engine coverage (which of Google
+News RSS and GDELT respond, and how many results carry dates) is recorded with
+its limitations.
 
 ### P2 detail — Access implementation
 

@@ -9,6 +9,7 @@ import {
   allowMethods,
   diagnosticEnabled,
   noStore,
+  requireIdentity,
   sameOrigin,
   type HttpEnv,
 } from './policy';
@@ -17,7 +18,6 @@ type PreferencesHttpEnv = HttpEnv & {
   Variables: { binding: PreferencesAgentEnv['PERSONAL_BRIEFING'] };
 };
 
-const localUserId = 'single-user';
 const envelopeSchema = z.object({
   document: z.unknown().optional(),
   expectedRevision: z.unknown().optional(),
@@ -43,6 +43,7 @@ preferencesRoutes.use('*', async (c, next) => {
   c.set('binding', c.env.PERSONAL_BRIEFING);
   await next();
 });
+preferencesRoutes.use('*', requireIdentity);
 preferencesRoutes.use(
   '*',
   sameOrigin('Cross-origin preference access is not allowed.'),
@@ -50,9 +51,9 @@ preferencesRoutes.use(
 preferencesRoutes.all('/', allowMethods('GET', 'PUT'));
 preferencesRoutes.get('/', noStore, async (c) => {
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
 
-  return c.json(await agent.readPreferences(localUserId));
+  return c.json(await agent.readPreferences(c.get('userId')));
 });
 preferencesRoutes.put('/', async (c) => {
   if (
@@ -70,11 +71,11 @@ preferencesRoutes.put('/', async (c) => {
       return c.json({ error: 'expectedRevision must be an integer.' }, 400);
     const document = preferencesSchema.parse(input.document);
     const binding = c.get('binding');
-    const agent = binding.get(binding.idFromName(localUserId));
+    const agent = binding.get(binding.idFromName(c.get('userId')));
     const result = await agent.replacePreferences(
       document,
       revision.data,
-      localUserId,
+      c.get('userId'),
     );
 
     if (!result.ok)
@@ -95,10 +96,10 @@ preferencesRoutes.put('/', async (c) => {
 preferencesRoutes.all('/proposals', allowMethods('GET', 'POST'));
 preferencesRoutes.get('/proposals', noStore, async (c) => {
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
 
   return c.json({
-    proposals: await agent.listPendingTopicProposals(localUserId),
+    proposals: await agent.listPendingTopicProposals(c.get('userId')),
   });
 });
 preferencesRoutes.post('/proposals', async (c) => {
@@ -118,8 +119,8 @@ preferencesRoutes.post('/proposals', async (c) => {
   }
 
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
-  const result = await agent.createTopicProposal(input, localUserId);
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+  const result = await agent.createTopicProposal(input, c.get('userId'));
 
   if (!result.ok)
     return c.json({ error: result.error, diagnostic: result.diagnostic }, 422);
@@ -147,11 +148,11 @@ preferencesRoutes.put('/proposals/:proposalId', async (c) => {
   }
 
   const binding = c.get('binding');
-  const agent = binding.get(binding.idFromName(localUserId));
+  const agent = binding.get(binding.idFromName(c.get('userId')));
   const result =
     input.action === 'apply'
-      ? await agent.applyTopicProposal(proposalId, localUserId)
-      : await agent.discardTopicProposal(proposalId, localUserId);
+      ? await agent.applyTopicProposal(proposalId, c.get('userId'))
+      : await agent.discardTopicProposal(proposalId, c.get('userId'));
 
   if (!result.ok) {
     return c.json(

@@ -37,7 +37,6 @@ import {
   topicProposalModel,
   type StoredTopicProposal,
 } from './topic-proposals';
-import type { SearxngContainer } from './searxng-container';
 import {
   briefingChatModel,
   buildBriefingChatContext,
@@ -61,7 +60,6 @@ import { z } from 'zod';
 export type PreferencesAgentEnv = {
   AI?: Ai;
   PERSONAL_BRIEFING: DurableObjectNamespace<PersonalBriefingAgent>;
-  SEARXNG: DurableObjectNamespace<SearxngContainer>;
   PREFERENCES_DIAGNOSTICS_ENABLED?: string;
 };
 

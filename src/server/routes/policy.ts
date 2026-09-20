@@ -1,16 +1,35 @@
 import type { MiddlewareHandler } from 'hono';
+import { resolveAccessIdentity, type AccessBindings } from '../access';
 import type { PreferencesAgentEnv } from '../preferences-agent';
 import type { BriefingWorkflowParams } from '../briefing-workflow';
 
 /** Optional local diagnostic bindings; production enables neither diagnostic flag. */
-export type Env = Partial<PreferencesAgentEnv> & {
-  BRIEFING_WORKFLOW?: Workflow<BriefingWorkflowParams>;
-  INSPECTION_ENABLED?: string;
-  SEARXNG_BASE_URL?: string;
+export type Env = Partial<PreferencesAgentEnv> &
+  AccessBindings & {
+    BRIEFING_WORKFLOW?: Workflow<BriefingWorkflowParams>;
+    INSPECTION_ENABLED?: string;
+    SEARXNG_BASE_URL?: string;
+  };
+
+/** Hono contracts shared by the Worker and route groups. */
+export type HttpEnv = {
+  Bindings: Env;
+  Variables: { userId: string };
 };
 
-/** Hono binding contract shared by the Worker and route groups. */
-export type HttpEnv = { Bindings: Env };
+/**
+ * Requires a verified Cloudflare Access identity on a route group and exposes it
+ * as `c.get('userId')`. Every rejection is a bounded 401; no handler reads a
+ * token itself.
+ */
+export const requireIdentity: MiddlewareHandler<HttpEnv> = async (c, next) => {
+  const identity = await resolveAccessIdentity(c.env, c.req.raw);
+
+  if (!identity.ok) return c.json({ error: identity.message }, identity.status);
+
+  c.set('userId', identity.userId);
+  await next();
+};
 
 /** Disables caching wherever a route group's original policy requires it. */
 export const noStore: MiddlewareHandler<HttpEnv> = async (c, next) => {

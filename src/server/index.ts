@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { routeAgentRequest } from 'agents';
+import { resolveAccessIdentity } from './access';
 import { chatsRoutes } from './routes/chats';
 import { feasibilityRoutes } from './routes/feasibility';
 import { briefingsRoutes } from './routes/briefings';
@@ -10,7 +11,6 @@ import { allowMethods, noStore, type HttpEnv } from './routes/policy';
 
 export { PersonalBriefingAgent } from './preferences-agent';
 export { BriefingWorkflow } from './briefing-workflow';
-export { SearxngContainer } from './searxng-container';
 
 /** Worker API composition; Static Assets owns frontend routing. */
 const app = new Hono<HttpEnv>();
@@ -23,6 +23,16 @@ app.route('/api/chats', chatsRoutes);
 app.route('/api/inspection', inspectionRoutes);
 app.route('/api/feasibility', feasibilityRoutes);
 app.all('/agents/*', async (c) => {
+  const identity = await resolveAccessIdentity(c.env, c.req.raw);
+
+  if (!identity.ok) return c.json({ error: identity.message }, identity.status);
+
+  // A client names the instance in the path; it may only address its own owner.
+  const segments = new URL(c.req.url).pathname.split('/').filter(Boolean);
+
+  if (segments.length === 3 && segments[2] !== identity.userId)
+    return c.json({ error: 'Agent route not found.' }, 404);
+
   const response = await routeAgentRequest(c.req.raw, c.env);
 
   return response ?? c.json({ error: 'Agent route not found.' }, 404);
