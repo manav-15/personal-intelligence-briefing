@@ -1349,3 +1349,19 @@ three topic queries spaced six seconds apart while a single earlier query return
 constraint, and the run correctly took the complete-failure path. Recorded DISC-10
 (`High`, `Decision needed`) covering the SearXNG-container versus free-plan
 trade-off; probe Worker deleted.
+
+### Can the Worker have its own IP? (2026-09-21)
+
+**User question (verbatim):** “is there a way to have my own IP addresses for the
+worker”
+
+**Outcome:** Answered from Cloudflare's own documentation rather than assumption,
+which also corrected an error in the earlier options: dedicated egress exists only
+as enterprise add-ons. Smart Shield's Dedicated CDN Egress IPs are the one
+mechanism that makes Worker `fetch()` to external origins originate from static
+addresses owned by the account, and Zero Trust's dedicated egress IPs are an
+add-on to Enterprise that apply to Gateway-proxied traffic (devices and networks),
+not Worker subrequests. Containers document outbound control by destination only —
+no source-IP guarantee — so the SearXNG option is justified by returning publisher
+URLs directly, not by a distinct IP. Recorded both in DISC-10, with running the
+provider-facing piece on an owner-controlled IP added as an explicit option.

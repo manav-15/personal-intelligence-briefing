@@ -367,6 +367,16 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Corrected a claim about container egress while answering whether
+  the Worker can have its own IP. Cloudflare's documentation offers dedicated
+  egress only as enterprise add-ons — Smart Shield's Dedicated CDN Egress IPs,
+  which do cover Worker `fetch()` to external origins, and Zero Trust's dedicated
+  egress IPs, which apply to Gateway-proxied device traffic — so a Container would
+  not have given a distinct egress IP even though SearXNG would still have removed
+  the need for Google's blocked decoder by returning publisher URLs directly.
+  DISC-10 now states this and adds the option of running the provider-facing piece
+  on an IP the owner controls, with engine reachability from Cloudflare's range to
+  be measured before paying for the paid plan.
 - **2026-09-21:** Recorded why the first hosted generation published nothing. The
   run started (so the deployment is configurable and the preference gate is
   satisfied) and ended with the complete-failure path the specification asks for:
