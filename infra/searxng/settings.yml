@@ -1,17 +1,25 @@
 # Local-only, private instance. No Valkey is needed with the limiter disabled.
 use_default_settings:
   engines:
+    # Only news engines that return usable publication dates are kept. Google's
+    # news engine is CAPTCHA-suspended and Brave's news results arrive without
+    # dates, so both are present here only to be disabled explicitly below.
     keep_only:
       - bing news
       - duckduckgo news
-      - brave.news
-      - google news
       - reuters
-      # The news engine shares this engine's network configuration.
+      # Kept only to disable it: the news engine shares this engine's network
+      # configuration, and its definition must remain or startup fails.
       - brave
+      - google news
+      - brave.news
 
 engines:
   - name: brave
+    disabled: true
+  - name: google news
+    disabled: true
+  - name: brave.news
     disabled: true
 
 general:

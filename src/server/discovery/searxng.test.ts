@@ -12,12 +12,13 @@ const item = {
 };
 
 describe('SearXNG provider interface', () => {
+  // Application windows carry a one-day buffer: day → 2, month → 32, year → 366.
   it.each([
-    ['day', 1],
-    ['month', 31],
-    ['year', 365],
+    ['day', 2],
+    ['month', 32],
+    ['year', 366],
   ] as const)(
-    'sends %s to SearXNG and enforces concrete inclusive dates before capping',
+    'sends %s to SearXNG and enforces the buffered inclusive window before capping',
     async (timeRange, days) => {
       const now = Date.parse('2026-09-18T08:00:00Z');
 

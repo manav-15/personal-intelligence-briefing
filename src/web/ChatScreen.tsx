@@ -3,6 +3,7 @@ import { useAgentChat } from '@cloudflare/ai-chat/react';
 import { useEffect, useState } from 'react';
 import type { ChatMessage, ChatSession } from '../shared/chat';
 import type { Briefing, BriefingItem } from '../shared/briefings';
+import { composerKeyAction, insertLineBreak } from './chat-composer';
 import {
   createChatSession,
   deleteChatSession,
@@ -255,10 +256,40 @@ export function ChatScreen() {
                     onChange={(event) => {
                       setInput(event.target.value);
                     }}
+                    onKeyDown={(event) => {
+                      const action = composerKeyAction(event);
+
+                      if (action === 'submit') {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+
+                        return;
+                      }
+
+                      if (action !== 'newline') return;
+                      event.preventDefault();
+                      const inserted = insertLineBreak(
+                        event.currentTarget.value,
+                        event.currentTarget.selectionStart,
+                        event.currentTarget.selectionEnd,
+                      );
+
+                      setInput(inserted.value);
+                      requestAnimationFrame(() => {
+                        event.currentTarget.setSelectionRange(
+                          inserted.caret,
+                          inserted.caret,
+                        );
+                      });
+                    }}
                     placeholder="Ask a follow-up about the selected story"
                     value={input}
                   />
                 </label>
+                <p className="chat-empty">
+                  Enter sends your question. ⌘Enter (or Ctrl+Enter) starts a new
+                  line.
+                </p>
                 <div>
                   <button disabled={busy || !input.trim()} type="submit">
                     {busy ? 'Answering…' : 'Ask question'}

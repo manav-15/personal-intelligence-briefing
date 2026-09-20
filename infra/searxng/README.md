@@ -15,12 +15,14 @@ creates an ignored `infra/searxng/.env` with a generated secret, starts the
 container, and waits for HTTP readiness. The pinned official image reports
 SearXNG `2026.9.17-274b63b67`.
 
-JSON and HTML formats are enabled. Search uses Bing News, DuckDuckGo News,
-Brave News, Google News, and Reuters. Google News here is SearXNG's engine,
-which is separate from the application's Google News RSS discovery adapter.
-Brave's disabled web engine is retained because its news engine shares the
-parent network configuration. This private instance has no limiter or public
-bot detection, so it does not need Valkey. The same pinned image and
+JSON and HTML formats are enabled. Search uses Bing News, DuckDuckGo News, and
+Reuters. SearXNG's Google News and Brave News engines are **disabled**: the
+Google engine is CAPTCHA-suspended and Brave's news results arrive without
+publication dates, which the briefing's freshness gate cannot use. Google News
+RSS remains the application's separate discovery adapter. Brave's web engine
+stays defined and disabled because the news engine shares its parent network
+configuration and startup fails without it. This private instance has no limiter
+or public bot detection, so it does not need Valkey. The same pinned image and
 `settings.yml` are built by the private Cloudflare Container declared in
 `wrangler.jsonc`. Local Compose alone supplies the loopback port and cache
 volume. The Cloudflare Container has no public route and is called only through
@@ -96,3 +98,18 @@ ordering changed between runs; the verifier needed three, two, and five
 publisher attempts respectively. WFAE's result was still older coverage,
 confirming that evidence availability and daily-news freshness are separate
 validation gates.
+
+## Measured results — 2026-09-20, Google and Brave disabled
+
+A news query for `india startups` returned 50 results from bing news (10),
+duckduckgo news (30), and reuters (20), with no unresponsive engines. A full
+three-topic briefing collection then showed SearXNG engine failures fall from 14
+to 4 for the same shape of run — only bing news connection/parsing errors — and
+two of seven SearXNG queries reported `ok` where every query previously reported
+`partial`.
+
+The trade-off is dated coverage. Bing News and DuckDuckGo News returned most
+results without `publishedDate`, and Reuters returned dated but older articles
+(2023–2024 in the sample). Brave News was one of the few dated news sources, so
+disabling it removes results that the application's freshness gate could
+otherwise have used; undated results remain ineligible for briefings.

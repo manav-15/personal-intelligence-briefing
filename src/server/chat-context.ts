@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { BriefingEvidence } from '../shared/chat';
 import type { Briefing, BriefingItem } from '../shared/briefings';
 
 const chatRequestSchema = z
@@ -11,7 +12,13 @@ const chatRequestSchema = z
 export const briefingChatModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 /** Version retained in the system instruction rather than inferred from model behavior. */
-export const briefingChatPromptVersion = '2026-09-20.1';
+export const briefingChatPromptVersion = '2026-09-20.2';
+
+/**
+ * Total retained article text supplied to one turn. It is divided across the
+ * item's sources so a multi-source item still shows each one a fair window.
+ */
+const maxChatEvidenceCharacters = 12_000;
 
 /** A validated story selection sent with one chat turn. */
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
@@ -51,6 +58,7 @@ export function parseChatRequest(value: unknown): ChatRequest | null {
 export function buildBriefingChatContext(
   briefing: Briefing | undefined,
   storyId: string,
+  evidence: BriefingEvidence[] = [],
 ): BriefingChatContext | null {
   const item = briefing?.items.find((candidate) => candidate.id === storyId);
 
@@ -66,13 +74,15 @@ export function buildBriefingChatContext(
     item.update === undefined
       ? 'No prior-coverage comparison was stored for this story.'
       : `Stored change note: ${item.update.whatChanged}`;
+  const retained = retainedEvidence(item, evidence);
 
   return {
     item,
     system: [
       'You are the Personal Briefing Agent. Answer only about the selected briefing story using the supplied briefing context.',
       'Do not use outside knowledge, suggest unprovided facts, browse broadly, or claim to have read the underlying article.',
-      'Treat source descriptions as limited metadata, not full article text. If the context cannot support an answer, say exactly what is missing.',
+      'Treat source descriptions as limited metadata. Retrieved text below is a bounded extract of the article captured during collection, so it may be incomplete and the live page may differ; never claim to have read beyond it.',
+      'If the context cannot support an answer, say exactly what is missing.',
       'Use concise prose. Attribute factual claims with one or more supplied source labels such as [S1]. Never invent a source label or URL.',
       `Prompt policy version: ${briefingChatPromptVersion}.`,
       '',
@@ -82,8 +92,38 @@ export function buildBriefingChatContext(
       update,
       'Sources:',
       sources,
+      '',
+      retained,
     ].join('\n'),
   };
+}
+
+/** Renders the bounded retained text per source, or states that none was kept. */
+function retainedEvidence(
+  item: BriefingItem,
+  evidence: BriefingEvidence[],
+): string {
+  const bySource = new Map(evidence.map((entry) => [entry.sourceUrl, entry]));
+  const perSource = Math.floor(
+    maxChatEvidenceCharacters / Math.max(1, item.citations.length),
+  );
+  const blocks = item.citations.flatMap((citation, index) => {
+    const entry = bySource.get(citation.sourceUrl);
+
+    if (entry === undefined || !entry.text.trim()) return [];
+    const text = entry.text.slice(0, perSource);
+
+    return [
+      `[S${String(index + 1)}] retrieved ${entry.retrievedAt}${text.length < entry.text.length ? ` (first ${String(text.length)} characters)` : ''}: ${text}`,
+    ];
+  });
+
+  if (blocks.length === 0)
+    return 'Retrieved article text: none was retained for this story, so answer only from the briefing summary and source metadata.';
+
+  return ['Retrieved article text from the collection run:', ...blocks].join(
+    '\n',
+  );
 }
 
 /** Returns code-owned sources that the UI may render beside an answer for one selected story. */

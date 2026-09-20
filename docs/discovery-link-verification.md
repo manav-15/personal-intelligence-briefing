@@ -1,8 +1,12 @@
 # Discovery link verification
 
-These scripts are experiments, not Worker code. They provide a reproducible way
-to decide whether a discovery service gives a canonical publisher URL that the
-future evidence module can retrieve.
+These scripts are experiments, not application code. They provide a reproducible
+way to decide whether a discovery service gives a canonical publisher URL that
+the evidence module can retrieve.
+
+The Google News sequence documented below is implemented in the Worker as
+`src/server/discovery/google-news-decoder.ts` under backlog item DISC-08; this
+script remains the standalone reproducibility check.
 
 Run them with Node 24:
 
@@ -46,6 +50,36 @@ Google's documented News sitemap format instead has publishers submit their
 own canonical article `<loc>` URLs; it does not document decoding a consumer
 RSS item's opaque ID. See [Google News sitemaps](https://developers.google.com/search/docs/crawling-indexing/sitemaps/news-sitemap).
 
+### Measured Google-side behaviour (2026-09-20)
+
+What Google enforces, from one session on a single residential IP:
+
+- **No quota or rate limit was encountered.** 310 sequential article-page
+  requests (roughly 176 MB) completed in 87 seconds with every response HTTP 200
+  — no 429, no `Retry-After` header, and no challenge page. A further 40
+  page-request cycles behaved the same. The page endpoint's observed latency was
+  p50 ≈ 210–250 ms, p95 ≈ 305 ms.
+- **Page weight is the practical cost.** Each article page was 259 KB–595 KB
+  (median ≈ 582 KB) of HTML; the `batchexecute` response is only ≈170–200 bytes.
+  A decode therefore costs roughly 580 KB and two requests, and a run's byte cost
+  is set by its decode budget, not by Google.
+- **The request envelope is exact.** `f.req` must be
+  `[[[ "Fbv4je", "<request JSON>" ]]]` — one nesting level more than the
+  outermost operation list suggests. Any mismatch (including an ID left carrying
+  `?oc=5`) is rejected as HTTP 400 with an `er` row and no explanation, and the
+  page request still succeeds, so the failure looks like a Google-side block
+  even though the payload is at fault. Decode failures on this endpoint are
+  therefore silent by design and must be attributed locally.
+- **Policy, not quota:** `news.google.com/robots.txt` serves `User-agent: *` with
+  `Disallow: /` and an allowlist that does not include `/rss/...`. The Worker
+  fetches on behalf of one user rather than crawling, but this is a compliance
+  consideration worth stating, not a technical limit.
+
+Absence of throttling in one session is not a guarantee. Google can rate-limit or
+change the protocol without notice; the Worker therefore bounds decodes, sends no
+retries, and reports each unresolved lead rather than treating a failure as a
+temporary glitch.
+
 ## GDELT DOC 2.0
 
 The public GDELT article-list endpoint accepts a keyword query and returns
@@ -84,8 +118,12 @@ See the [SearXNG search API documentation](https://docs.searxng.org/dev/search_a
 
 ## Decision implication
 
-GDELT is the only currently tested source that gives a direct publisher URL
-without an undocumented decoder. It needs strict language/source filters and a
-rate-limit policy. Google News RSS remains useful as discovery, but its current
-decoder is an evaluated fallback only. SearXNG needs a controlled deployment
-before it can be treated as a dependable provider.
+GDELT gives a direct publisher URL without an undocumented decoder and needs
+strict language/source filters and a rate-limit policy; it stays off normal runs
+while live requests return 429. Google News RSS has a bounded Worker decoder and
+runs alongside the private SearXNG instance, so a CAPTCHA in SearXNG's own
+`google news` engine no longer removes all discovery. Its protocol is still
+undocumented, so a challenge or an article page larger than the byte bound fails
+closed and must disclose the unresolved lead rather than substitute a weaker
+claim. SearXNG remains the primary search channel and still needs a controlled
+deployment before it can be treated as a dependable provider.

@@ -139,21 +139,46 @@ published briefing run and its existing story; it stores the immutable briefing
 date and story headline so it remains browsable after the briefing is older.
 
 Chat model context is built from the session's selected story and only that
-session's most recent 12 stored turns. A story summary, stored update note, and
-code-owned citations are the complete evidence boundary. The browser renders
-citations independently, and code adds `[S1]` when a model response omits a
-source label. The session APIs are same-origin and `no-store`: list/create,
-read messages, and permanent owner-scoped delete. Publisher evidence refresh
-and a richer cross-story briefing conversation remain deferred.
+session's most recent 12 stored turns. A story summary, stored update note,
+code-owned citations, and the bounded extract retained for each cited source are
+the complete evidence boundary; the extract carries its tier and retrieval time,
+and the prompt requires the model to disclose that it may be incomplete. The
+browser renders citations independently, and code adds `[S1]` when a model
+response omits a source label. The session APIs are same-origin and `no-store`:
+list/create, read messages, and permanent owner-scoped delete. Live publisher
+evidence refresh and a richer cross-story briefing conversation remain deferred.
 
 ## Discovery feasibility result
 
 Google News RSS returned candidates for the initial AI, world-news, and
 Liverpool topics. Its encoded item links first redirect to another Google News
-URL, then return a large Google HTML page rather than a publisher URL. The
-current code reports this as unavailable evidence and does not summarize it as
-an article. A dedicated Google-link decoder or a different discovery provider
-must be evaluated and reviewed before the product enables article retrieval.
+URL, then return a large Google HTML page rather than a publisher URL, which the
+earlier feasibility code reported as unavailable evidence.
+
+## Google News publisher-link decoding (2026-09-20)
+
+`discovery/google-news-decoder.ts` implements the protocol the feasibility
+scripts verified: read the article page's `data-n-a-sg` and `data-n-a-ts`
+values, post them with the opaque ID to Google's `batchexecute` endpoint, and
+validate the returned external URL. Collection decodes before deduplication, so
+dedupe, blocked-source checks, and evidence all use the publisher URL, and the
+decoded lead keeps its Google link as `discoveryUrl`. A lead the run-wide decode
+budget cannot resolve stays in the diagnostic trace as `decode-failed`.
+
+The protocol is undocumented and can change, rate-limit, or challenge automated
+requests without notice, so the adapter is bounded rather than trusted: two
+requests per decode, a 1 MB page bound, no retries, and no CAPTCHA workarounds. A
+decoded link is still only a lead — publisher access decides whether evidence
+retrieval succeeds.
+
+Channel selection spans both channels. `providerCalls` adds the decoded Google
+News channel to every run, includes the private SearXNG channel when configured,
+and keeps GDELT only when SearXNG is absent. `briefing-workflow.ts` always
+configures SearXNG (local `SEARXNG_BASE_URL` or the private Container), so a
+normal generate-briefing run collects from SearXNG and the decoded Google News
+RSS channel together. The channels are independent: on 2026-09-20 every SearXNG
+query reported `partial` (Bing connection errors and Google News CAPTCHA) while
+all six Google News RSS queries returned results.
 
 ## Defaults
 
@@ -229,8 +254,9 @@ Late publication is rejected once a run is failed. Collection and composition ha
 publication may retry idempotently. No provider/model call is replayed by recovery.
 
 Collection rotates per-topic jobs through configured SearXNG and rotates
-retained candidates for article retrieval. Freshness is an inclusive 24-hour
-application-side check against the fixed run clock. For an otherwise eligible
+retained candidates for article retrieval. Freshness is an inclusive two-day
+application-side check — a one-day target plus the same one-day buffer the search
+ranges carry — against the fixed run clock. For an otherwise eligible
 undated result, a bounded publisher fetch can recover a date from JSON-LD,
 recognized metadata, or a semantic time element; the resulting retrieval is
 reused as evidence. Unknown/future dates remain ineligible. Search-reported and

@@ -46,12 +46,15 @@ import {
   parseChatRequest,
 } from './chat-context';
 import {
+  briefingEvidenceSchema,
   chatMessageSchema,
   chatSessionMessagesSchema,
   chatSessionSchema,
+  type BriefingEvidence,
   type ChatMessage,
   type ChatSession,
 } from '../shared/chat';
+import { evidenceSchema, storyCandidateSchema } from '../shared/inspection';
 import { z } from 'zod';
 
 /** Bindings used by the singleton preferences Agent. */
@@ -98,6 +101,9 @@ export type BriefingPublishResult =
 /** Stable owner key supplied at the Worker edge; Access `sub` will replace the local placeholder. */
 export type UserId = string;
 
+/** Retained article text per cited source, matching the extraction ceiling. */
+const maxRetainedEvidenceCharacters = 12_000;
+
 /** Singleton durable owner of briefing preferences, generation, and grounded chat. */
 export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
   /** Retains a bounded personal transcript while Agent-managed SQLite handles stream recovery. */
@@ -131,6 +137,11 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     const context = buildBriefingChatContext(
       this.readBriefingByRun(session.briefingRunId, 'single-user'),
       session.storyId,
+      this.readBriefingEvidence(
+        session.briefingRunId,
+        session.storyId,
+        'single-user',
+      ),
     );
 
     if (context === null)
@@ -794,6 +805,7 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         briefing.publishedAt,
         JSON.stringify(briefing),
       );
+      this.retainBriefingEvidence(briefing, userId);
       this.ctx.storage.sql.exec(
         `DELETE FROM briefing_candidates WHERE run_id = ?`,
         briefing.runId,
@@ -807,6 +819,95 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
 
       return { ok: true, briefing, idempotent: false };
     });
+  }
+
+  /**
+   * Copies bounded extracted text for every cited source before the run's
+   * temporary evidence is deleted, so a later follow-up can consult the article
+   * that supported a published item. Runs inside the publication transaction.
+   */
+  private retainBriefingEvidence(briefing: Briefing, userId: UserId): void {
+    const candidates = [
+      ...this.ctx.storage.sql.exec<{
+        source_url: string;
+        story: string;
+        evidence: string;
+        retrieved_at: string;
+      }>(
+        `SELECT candidate.source_url, candidate.story, candidate.evidence, strftime('%Y-%m-%dT%H:%M:%SZ', candidate.created_at) AS retrieved_at FROM briefing_candidates AS candidate INNER JOIN briefing_runs AS run ON run.id = candidate.run_id WHERE candidate.run_id = ? AND run.user_id = ?`,
+        briefing.runId,
+        userId,
+      ),
+    ].map((row) => ({
+      sourceUrl: row.source_url,
+      retrievedAt: row.retrieved_at,
+      story: storyCandidateSchema.safeParse(JSON.parse(row.story) as unknown),
+      evidence: evidenceSchema.safeParse(JSON.parse(row.evidence) as unknown),
+    }));
+
+    for (const item of briefing.items) {
+      for (const citation of item.citations) {
+        const candidate = candidates.find(
+          (entry) => entry.sourceUrl === citation.sourceUrl,
+        );
+        const retained = candidate === undefined ? null : retainable(candidate);
+
+        if (candidate === undefined || retained === null) continue;
+
+        const text = retained.text.slice(0, maxRetainedEvidenceCharacters);
+
+        this.ctx.storage.sql.exec(
+          `INSERT OR REPLACE INTO briefing_evidence (run_id, item_id, source_url, publisher, evidence_tier, retrieved_at, characters, truncated, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          briefing.runId,
+          item.id,
+          citation.sourceUrl,
+          citation.publisher,
+          citation.evidenceTier,
+          candidate.retrievedAt,
+          text.length,
+          retained.truncated || text.length < retained.text.length ? 1 : 0,
+          text,
+        );
+      }
+    }
+  }
+
+  /** Reads retained evidence for one published item; older briefings hold none. */
+  readBriefingEvidence(
+    runId: string,
+    itemId: string,
+    userId: UserId,
+  ): BriefingEvidence[] {
+    this.ensureSchema();
+    briefingRunInputSchema.shape.runId.parse(runId);
+    const rows = [
+      ...this.ctx.storage.sql.exec<{
+        source_url: string;
+        publisher: string | null;
+        evidence_tier: 'article' | 'description' | 'headline-only';
+        retrieved_at: string;
+        characters: number;
+        truncated: number;
+        text: string;
+      }>(
+        `SELECT evidence.source_url, evidence.publisher, evidence.evidence_tier, evidence.retrieved_at, evidence.characters, evidence.truncated, evidence.text FROM briefing_evidence AS evidence INNER JOIN briefings AS briefing ON briefing.run_id = evidence.run_id WHERE evidence.run_id = ? AND evidence.item_id = ? AND briefing.user_id = ? ORDER BY evidence.source_url ASC`,
+        runId,
+        itemId,
+        userId,
+      ),
+    ];
+
+    return rows.map((row) =>
+      briefingEvidenceSchema.parse({
+        sourceUrl: row.source_url,
+        publisher: row.publisher,
+        evidenceTier: row.evidence_tier,
+        retrievedAt: row.retrieved_at,
+        characters: row.characters,
+        truncated: row.truncated === 1,
+        text: row.text,
+      }),
+    );
   }
 
   /** Marks an active run failed, retains its reason, and removes temporary evidence. */
@@ -1257,21 +1358,30 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         );
       }
 
-      if (hasMigration(8)) return;
+      if (!hasMigration(8)) {
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE chat_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, briefing_run_id TEXT NOT NULL, briefing_date TEXT NOT NULL, story_id TEXT NOT NULL, story_headline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (briefing_run_id) REFERENCES briefings(run_id))`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE INDEX chat_sessions_latest_by_user ON chat_sessions (user_id, updated_at DESC)`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE chat_messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES chat_sessions(id))`,
+        );
+        this.ctx.storage.sql.exec(
+          `CREATE INDEX chat_messages_by_session ON chat_messages (session_id, created_at ASC)`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'))`,
+        );
+      }
+
+      if (hasMigration(9)) return;
       this.ctx.storage.sql.exec(
-        `CREATE TABLE chat_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, briefing_run_id TEXT NOT NULL, briefing_date TEXT NOT NULL, story_id TEXT NOT NULL, story_headline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (briefing_run_id) REFERENCES briefings(run_id))`,
+        `CREATE TABLE briefing_evidence (run_id TEXT NOT NULL, item_id TEXT NOT NULL, source_url TEXT NOT NULL, publisher TEXT, evidence_tier TEXT NOT NULL, retrieved_at TEXT NOT NULL, characters INTEGER NOT NULL, truncated INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (run_id, item_id, source_url), FOREIGN KEY (run_id) REFERENCES briefings(run_id))`,
       );
       this.ctx.storage.sql.exec(
-        `CREATE INDEX chat_sessions_latest_by_user ON chat_sessions (user_id, updated_at DESC)`,
-      );
-      this.ctx.storage.sql.exec(
-        `CREATE TABLE chat_messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES chat_sessions(id))`,
-      );
-      this.ctx.storage.sql.exec(
-        `CREATE INDEX chat_messages_by_session ON chat_messages (session_id, created_at ASC)`,
-      );
-      this.ctx.storage.sql.exec(
-        `INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'))`,
+        `INSERT INTO schema_migrations (version, applied_at) VALUES (9, datetime('now'))`,
       );
     });
   }
@@ -1346,4 +1456,28 @@ function proposalDiagnostic(caught: unknown, response: unknown): string {
       : '';
 
   return `${error}${output}`.slice(0, 1_500);
+}
+
+/**
+ * Chooses the bounded text a follow-up may consult for one cited source: the
+ * extracted article body, or the attributed description that supported a
+ * description-tier item. Headline-only sources contribute nothing.
+ */
+function retainable(candidate: {
+  story: ReturnType<typeof storyCandidateSchema.safeParse>;
+  evidence: ReturnType<typeof evidenceSchema.safeParse>;
+}): { text: string; truncated: boolean } | null {
+  if (candidate.evidence.success && candidate.evidence.data.status === 'usable')
+    return {
+      text: candidate.evidence.data.text,
+      truncated: candidate.evidence.data.truncated,
+    };
+
+  const description = candidate.story.success
+    ? candidate.story.data.description?.text
+    : undefined;
+
+  return description === undefined || !description.trim()
+    ? null
+    : { text: description, truncated: false };
 }

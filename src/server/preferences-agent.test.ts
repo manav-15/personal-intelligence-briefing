@@ -149,6 +149,27 @@ describe('persistence document contract', () => {
       idempotent: false,
     });
     expect(agent.readBriefingCollection(runId, 'test-user')).toBeUndefined();
+    const retained = agent.readBriefingEvidence(
+      runId,
+      'example-story',
+      'test-user',
+    );
+
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).toMatchObject({
+      sourceUrl: 'https://publisher.example/article',
+      publisher: 'Example',
+      evidenceTier: 'article',
+      characters: 'Temporary article evidence.'.length,
+      truncated: false,
+      text: 'Temporary article evidence.',
+    });
+    expect(retained[0]?.retrievedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u,
+    );
+    expect(
+      agent.readBriefingEvidence(runId, 'example-story', 'other-user'),
+    ).toEqual([]);
     expect(agent.readBriefingDiagnostics(runId, 'test-user')).toEqual(
       fixtureDiagnostics(),
     );
@@ -162,6 +183,203 @@ describe('persistence document contract', () => {
     expect(
       agent.readTodayBriefing('test-user', new Date('2026-09-18T12:00:00Z')),
     ).toBeUndefined();
+  });
+
+  it('caps retained article text and skips a source the briefing did not cite', () => {
+    const agent = inMemoryAgent();
+    const saved = agent.replacePreferences(examplePreferences, 0, 'test-user');
+
+    if (!saved.ok) throw new Error('Expected preferences to save.');
+    const reserved = agent.reserveManualBriefingRun('test-user');
+
+    if (!reserved.ok) throw new Error('Reservation failed');
+    const longText = 'y'.repeat(13_000);
+
+    expect(
+      agent.storeBriefingCollection(
+        reserved.runId,
+        {
+          candidates: [
+            {
+              story: {
+                id: 'https://publisher.example/long',
+                title: 'Long story',
+                publisher: 'Example',
+                publishedAt: null,
+                sourceUrl: 'https://publisher.example/long',
+                discovery: 'gdelt',
+              },
+              topicIds: ['ai'],
+              evidence: {
+                status: 'usable',
+                articleUrl: 'https://publisher.example/long',
+                text: longText,
+                truncated: false,
+                provenance: 'publisher-page',
+                pageTitle: 'Long story',
+                extraction: 'article-region',
+              },
+              evidenceTier: 'article',
+            },
+            {
+              story: {
+                id: 'https://publisher.example/uncited',
+                title: 'Uncited story',
+                publisher: 'Example',
+                publishedAt: null,
+                sourceUrl: 'https://publisher.example/uncited',
+                discovery: 'gdelt',
+              },
+              topicIds: ['ai'],
+              evidence: {
+                status: 'usable',
+                articleUrl: 'https://publisher.example/uncited',
+                text: 'Uncited article evidence.',
+                truncated: false,
+                provenance: 'publisher-page',
+                pageTitle: 'Uncited story',
+                extraction: 'article-region',
+              },
+              evidenceTier: 'article',
+            },
+          ],
+          failures: [],
+          diagnostics: fixtureDiagnostics(),
+        },
+        'test-user',
+      ),
+    ).toBe(true);
+    expect(
+      agent.publishBriefing(
+        briefingSchema.parse({
+          schemaVersion: 1,
+          runId: reserved.runId,
+          date: '2026-09-19',
+          preferenceRevision: saved.preferences.revision,
+          completeness: 'complete',
+          limitations: [],
+          items: [
+            {
+              id: 'long-story',
+              topicIds: ['ai'],
+              headline: 'Long story',
+              summary: 'An evidence-grounded summary.',
+              publishedAt: null,
+              citations: [
+                {
+                  sourceUrl: 'https://publisher.example/long',
+                  publisher: 'Example',
+                  evidenceTier: 'article',
+                },
+              ],
+            },
+          ],
+          publishedAt: '2026-09-19T00:00:00.000Z',
+        }),
+        'test-user',
+      ),
+    ).toMatchObject({ ok: true });
+
+    const retained = agent.readBriefingEvidence(
+      reserved.runId,
+      'long-story',
+      'test-user',
+    );
+
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).toMatchObject({ characters: 12_000, truncated: true });
+    expect(retained[0]?.text).toHaveLength(12_000);
+    expect(
+      agent.readBriefingEvidence(reserved.runId, 'long-story', 'test-user'),
+    ).not.toContainEqual(
+      expect.objectContaining({
+        sourceUrl: 'https://publisher.example/uncited',
+      }),
+    );
+  });
+
+  it('retains an attributed description when an item has no article body', () => {
+    const agent = inMemoryAgent();
+    const saved = agent.replacePreferences(examplePreferences, 0, 'test-user');
+
+    if (!saved.ok) throw new Error('Expected preferences to save.');
+    const reserved = agent.reserveManualBriefingRun('test-user');
+
+    if (!reserved.ok) throw new Error('Reservation failed');
+    const description =
+      'Example Lab released Model Q with a larger context window.';
+
+    agent.storeBriefingCollection(
+      reserved.runId,
+      {
+        candidates: [
+          {
+            story: {
+              id: 'https://publisher.example/blocked',
+              title: 'Example Lab releases Model Q',
+              publisher: 'Example Lab',
+              publishedAt: null,
+              sourceUrl: 'https://publisher.example/blocked',
+              discovery: 'searxng',
+              description: {
+                text: description,
+                kind: 'search-snippet',
+                provider: 'searxng',
+                observedAt: '2026-09-19T06:00:00.000Z',
+              },
+            },
+            topicIds: ['ai'],
+            evidence: {
+              status: 'unavailable',
+              reason: 'The publisher returned 403.',
+            },
+            evidenceTier: 'description',
+          },
+        ],
+        failures: [],
+        diagnostics: fixtureDiagnostics(),
+      },
+      'test-user',
+    );
+    agent.publishBriefing(
+      briefingSchema.parse({
+        schemaVersion: 1,
+        runId: reserved.runId,
+        date: '2026-09-19',
+        preferenceRevision: saved.preferences.revision,
+        completeness: 'partial',
+        limitations: [],
+        items: [
+          {
+            id: 'model-q',
+            topicIds: ['ai'],
+            headline: 'Example Lab releases Model Q',
+            summary: 'A labelled description-only item.',
+            publishedAt: null,
+            citations: [
+              {
+                sourceUrl: 'https://publisher.example/blocked',
+                publisher: 'Example Lab',
+                evidenceTier: 'description',
+              },
+            ],
+          },
+        ],
+        publishedAt: '2026-09-19T00:00:00.000Z',
+      }),
+      'test-user',
+    );
+
+    expect(
+      agent.readBriefingEvidence(reserved.runId, 'model-q', 'test-user'),
+    ).toMatchObject([
+      {
+        sourceUrl: 'https://publisher.example/blocked',
+        evidenceTier: 'description',
+        truncated: false,
+        text: description,
+      },
+    ]);
   });
 
   it('restores an active run and releases an expired reservation with evidence cleanup', () => {

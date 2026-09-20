@@ -35,8 +35,12 @@ Increment 2 adds Google News RSS and GDELT discovery feasibility. Test GDELT
 locally at `/api/feasibility/discovery?provider=gdelt&q=Liverpool&limit=3`;
 omit `provider` to use Google News. Providers are separate files in
 `src/server/discovery`. GDELT returns direct publisher links, with explicit
-rate-limit failures and bounded article retrieval. Discovery success does not
-guarantee that publishers allow article retrieval.
+rate-limit failures and bounded article retrieval. A bounded Google News
+publisher-link decoder resolves RSS items to publisher URLs and discloses leads
+its budget cannot resolve; normal briefing runs query the SearXNG channel and
+this Google News channel together, so a SearXNG engine failure does not remove
+all discovery. Discovery success does not guarantee that publishers allow
+article retrieval.
 
 ## Requirements
 
@@ -125,8 +129,8 @@ not constitute a publication freshness filter. Extraction can include footer
 and related-story text, so review it before trusting future summaries.
 
 Filtered inspection searches send SearXNG `time_range=day`, `month`, or `year`
-and then apply concrete server-side date ranges: previous 24 hours, 31 days,
-or 365 days. Undated/future leads are excluded; the UI shows range boundaries
+and then apply concrete server-side date ranges with a one-day buffer: previous
+2 days, 32 days, or 366 days. Undated/future leads are excluded; the UI shows range boundaries
 and excluded counts. Daily briefing collection deliberately queries configured
 SearXNG news engines without that parameter and applies the same server-side
 freshness gate, avoiding a Bing-only path when other engines do not implement
@@ -171,10 +175,30 @@ set its runtime secret without putting it in source control:
 npx wrangler secret put SEARXNG_SECRET
 ```
 
-The intended deployment command is `npx wrangler deploy`; the final setup guide
-will document Access, Workflow, and remaining production bindings. `npm run dev`
-does not deploy cloud resources. Local Docker remains the supported way to
+Deploy with the repository configuration, and validate it without publishing
+first:
+
+```sh
+npm run build
+npx wrangler deploy --dry-run --config wrangler.jsonc
+npx wrangler deploy --config wrangler.jsonc
+```
+
+`--config wrangler.jsonc` is required: the Vite plugin redirects Wrangler to a
+generated `dist/<worker>/wrangler.json`, where the assets directory is rewritten
+relative to that file but the container's Dockerfile path is not, so a plain
+`npx wrangler deploy` aborts on a missing `dist/…/infra/searxng/Dockerfile`.
+
+Do not set `SEARXNG_BASE_URL` in deployment: it exists for local Docker and, when
+present, the Worker uses it instead of the private container binding. `npm run
+dev` does not deploy cloud resources. Local Docker remains the supported way to
 inspect search and article evidence.
+
+Nothing is exposed by default (`workers_dev` and `preview_urls` are false), and
+the API has no authentication yet, so **Access protection must be configured
+before the first hostname is added**. See the hosting plan in
+[`docs/implementation-plan.md`](docs/implementation-plan.md) for the phased
+increment.
 
 ## Evidence limitations and planned improvements
 
@@ -187,9 +211,13 @@ defaults. See [the next iteration plan](docs/next-iteration.md) for local
 integration results and following persisted topic management and scoped prompts.
 
 Google News results are discovery leads, not sufficient evidence for detailed
-summaries. The feasibility check confirmed that Google's encoded RSS links do
-not directly resolve to publisher URLs: a dedicated resolver or alternate
-provider is required before bounded publisher-page retrieval can be enabled.
+summaries. On the RSS discovery path, collection resolves their encoded links to
+publisher URLs through a bounded decoder for undocumented Google endpoints and
+keeps the Google link as provenance; leads the budget cannot resolve stay in the
+run diagnostic trace and are never fetched. Generate-briefing runs this channel
+alongside SearXNG, and each Google query gets its own share of the run's decode
+budget.
+
 The app retains citations, metadata, and summary provenance instead of full
 articles. It must disclose when a chat answer only has a feed excerpt or cannot
 retrieve an article.
@@ -225,11 +253,14 @@ Open **Chat** after a briefing exists. Select a story, then start a saved
 conversation. Each session stores its briefing run, briefing date, and story
 identity, so it can be reopened after reload and remains in the Chat library
 when its edition becomes historical. The Agent answers only from that saved
-briefing item's summary, stored update note, and listed citations. If no edition
-exists for the current local day, Chat opens the newest retained edition.
+briefing item: its summary, stored update note, listed citations, and the bounded
+extract of each cited source retained at publication. If no edition exists for
+the current local day, Chat opens the newest retained edition. In the question
+box, **Enter** sends the question and **⌘Enter** (or **Ctrl+Enter**) starts a
+new line, so a longer question can be composed without a mouse.
 **Delete conversation** permanently removes that session and its messages.
 
-The initial chat slice does not retrieve new articles or run broad search. It
-does not claim access to a full article when the saved briefing has only a
-limited source description. Publisher-evidence refresh is tracked in the
-[pipeline backlog](docs/data-pipeline.md#9-improvement-backlog).
+The retained extract is capped at the extraction limit and older editions have
+none, so the model must say when the text cannot support an answer. It does not
+retrieve new articles or run broad search. Publisher-evidence refresh is tracked
+in the [pipeline backlog](docs/data-pipeline.md#9-improvement-backlog).

@@ -350,6 +350,7 @@ function snapshot(): BriefingCollectionSnapshot {
       maxCandidates: 36,
       maxEvidenceFetches: 12,
       maxDateResolutionFetches: 6,
+      maxGoogleNewsDecodes: 4,
       maxProviderRetries: 0,
     },
   };

@@ -31,6 +31,11 @@ export const storyCandidateSchema = z.object({
     .url()
     .max(2000)
     .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol)),
+  discoveryUrl: z
+    .url()
+    .max(2000)
+    .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol))
+    .optional(),
   discovery: discoveryProviderSchema,
   description: descriptionSchema.optional(),
   engines: z.array(z.string()).optional(),

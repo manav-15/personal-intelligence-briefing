@@ -22,6 +22,7 @@ import {
   discoverSearxng,
   type Fetcher,
 } from './discovery';
+import { decodeGoogleNewsPublisherUrl } from './discovery/google-news-decoder';
 import { retrieveEvidence } from './evidence';
 
 const collectionProviderSchema = z.enum(['searxng', 'google-news', 'gdelt']);
@@ -33,6 +34,7 @@ export const briefingCollectionBudgetSchema = z.strictObject({
   maxCandidates: z.number().int().min(1).max(100),
   maxEvidenceFetches: z.number().int().min(1).max(50),
   maxDateResolutionFetches: z.number().int().min(0).max(20).default(6),
+  maxGoogleNewsDecodes: z.number().int().min(0).max(60).default(4),
   maxProviderRetries: z.number().int().min(0).max(2),
 });
 
@@ -43,6 +45,7 @@ export const defaultBriefingCollectionBudget = {
   maxCandidates: 36,
   maxEvidenceFetches: 12,
   maxDateResolutionFetches: 6,
+  maxGoogleNewsDecodes: 4,
   maxProviderRetries: 0,
 } as const;
 
@@ -87,13 +90,15 @@ export type BriefingCollectionResult = z.infer<
   typeof briefingCollectionResultSchema
 >;
 
+/** Normalized provider result for one discovery call, including contained failures. */
+type DiscoveryOutcome = {
+  stories: StoryCandidate[];
+  failures: Array<{ message: string }>;
+};
 type DiscoveryCall = (
   query: string,
   maxResults: number,
-) => Promise<{
-  stories: StoryCandidate[];
-  failures: Array<{ message: string }>;
-}>;
+) => Promise<DiscoveryOutcome>;
 type CollectionProvider = z.infer<typeof collectionProviderSchema>;
 type CandidateLead = {
   story: StoryCandidate;
@@ -125,8 +130,14 @@ export async function collectBriefingCandidates(
     queries: [],
     candidates: [],
   };
+  const scheduled = jobs.slice(0, snapshot.budget.maxQueries);
+  let decodesSpent = 0;
+  let googleJobsRemaining = scheduled.filter(
+    (job) => job.provider === 'google-news',
+  ).length;
+  let reportedGoogleDecodeBudget = false;
 
-  for (const job of jobs.slice(0, snapshot.budget.maxQueries)) {
+  for (const job of scheduled) {
     const result = await collectProviderResult(
       job.discover,
       job.query,
@@ -134,57 +145,58 @@ export async function collectBriefingCandidates(
       job.provider,
       failures,
     );
+    const decoded = await decodeProviderStories(
+      job.provider,
+      result,
+      decodeBudgetFor(
+        job,
+        snapshot.budget.maxGoogleNewsDecodes - decodesSpent,
+        googleJobsRemaining,
+      ),
+      fetcher,
+      now,
+    );
+
+    decodesSpent += decoded.attempts;
+
+    if (job.provider === 'google-news') googleJobsRemaining -= 1;
+
+    if (decoded.capped && !reportedGoogleDecodeBudget) {
+      failures.push({
+        stage: 'budget',
+        provider: 'google-news',
+        message:
+          'Google News publisher-link decoding stopped after reaching its budget.',
+      });
+      reportedGoogleDecodeBudget = true;
+    }
 
     const queryIndex = diagnostics.queries.length;
 
-    diagnostics.queries.push({
-      topicId: job.topic.id,
-      provider: job.provider,
-      query: job.query.slice(0, 4_000),
-      status:
-        result === undefined
-          ? 'failed'
-          : result.failures.length > 0
-            ? 'partial'
-            : 'ok',
-      returned: result?.stories.length ?? 0,
-      failureCount: result?.failures.length ?? 1,
-    });
+    recordQueryDiagnostic(diagnostics, job, result, decoded);
 
     if (result === undefined) continue;
     recordDiscoveryFailures(failures, job.provider, result);
-    const observed = result.stories.map((story) =>
-      candidateDiagnostic(
-        story,
-        snapshot.preferences,
-        job.topic,
-        now,
-        queryIndex,
-      ),
+
+    for (const message of decoded.failures) {
+      failures.push({ stage: 'discovery', provider: 'google-news', message });
+    }
+
+    const observed = recordCandidateDiagnostics(
+      diagnostics,
+      decoded,
+      snapshot.preferences,
+      job.topic,
+      now,
+      queryIndex,
     );
 
-    diagnostics.candidates.push(...observed);
-
-    for (const [index, story] of result.stories.entries()) {
-      const outcome = observed[index]?.outcome;
-
-      if (outcome === 'candidate-budget')
-        addCandidate(candidates, story, job.topic);
-
-      if (
-        outcome === 'unknown-date' &&
-        nonDateRejectionReason(story, snapshot.preferences, job.topic) ===
-          undefined
-      )
-        addCandidate(undatedCandidates, story, job.topic);
-    }
-
-    for (const excess of fairEvidenceOrder(
+    selectLeads(observed, snapshot, job.topic, candidates, undatedCandidates);
+    pruneCandidateBudget(
       candidates,
-      snapshot.preferences.topics,
-    ).slice(snapshot.budget.maxCandidates)) {
-      candidates.delete(excess.story.sourceUrl);
-    }
+      snapshot.preferences,
+      snapshot.budget.maxCandidates,
+    );
   }
 
   if (jobs.length > snapshot.budget.maxQueries) {
@@ -217,10 +229,11 @@ export async function collectBriefingCandidates(
   return briefingCollectionResultSchema.parse({ ...collected, diagnostics });
 }
 
+/** Round-robins tasks so every enabled topic gets a pass before any topic repeats. */
 function collectionJobs(
   topics: Topic[],
   calls: Array<[CollectionProvider, DiscoveryCall]>,
-) {
+): CollectionJob[] {
   const queues = topics
     .filter((topic) => topic.enabled)
     .map((topic) =>
@@ -233,12 +246,7 @@ function collectionJobs(
         })),
       ),
     );
-  const jobs: Array<{
-    topic: Topic;
-    query: string;
-    provider: CollectionProvider;
-    discover: DiscoveryCall;
-  }> = [];
+  const jobs: CollectionJob[] = [];
 
   for (
     let round = 0;
@@ -255,6 +263,12 @@ function collectionJobs(
   return jobs;
 }
 
+/**
+ * Builds the bounded discovery channels for one run. A configured SearXNG
+ * instance is joined by Google News RSS, so the run has an independent publisher
+ * channel. GDELT stays on the list only without SearXNG, because live GDELT
+ * requests are still rate-limited.
+ */
 function providerCalls(
   fetcher: Fetcher,
   providers: BriefingCollectionProviders,
@@ -262,32 +276,207 @@ function providerCalls(
   const calls: Array<[CollectionProvider, DiscoveryCall]> = [];
   const searxng = providers.searxng;
 
-  if (searxng !== undefined) {
-    return [
-      [
-        'searxng',
-        (query, maxResults) =>
-          discoverSearxng(
-            { query, maxResults, timeRange: 'any' },
-            searxng.baseUrl,
-            searxng.fetcher,
-          ),
-      ],
-    ];
-  }
+  if (searxng !== undefined)
+    calls.push([
+      'searxng',
+      (query, maxResults) =>
+        discoverSearxng(
+          { query, maxResults, timeRange: 'any' },
+          searxng.baseUrl,
+          searxng.fetcher,
+        ),
+    ]);
 
-  calls.push(
-    [
-      'google-news',
-      (query, maxResults) => discoverGoogleNews({ query, maxResults }, fetcher),
-    ],
-    [
+  calls.push([
+    'google-news',
+    (query, maxResults) => discoverGoogleNews({ query, maxResults }, fetcher),
+  ]);
+
+  if (searxng === undefined)
+    calls.push([
       'gdelt',
       (query, maxResults) => discoverGdelt({ query, maxResults }, fetcher),
-    ],
-  );
+    ]);
 
   return calls;
+}
+
+/**
+ * Splits the remaining publisher-link decode allowance across the Google queries
+ * still scheduled, so one topic cannot spend the whole run's decodes.
+ */
+function decodeBudgetFor(
+  job: CollectionJob,
+  remainingBudget: number,
+  googleJobsRemaining: number,
+): number {
+  if (job.provider !== 'google-news' || googleJobsRemaining <= 0) return 0;
+
+  return Math.ceil(remainingBudget / googleJobsRemaining);
+}
+
+/** One scheduled discovery call before its provider result is known. */
+type CollectionJob = {
+  topic: Topic;
+  query: string;
+  provider: CollectionProvider;
+  discover: DiscoveryCall;
+};
+/** What the collection step did with one returned provider lead. */
+type LeadState =
+  | 'resolved'
+  | 'passthrough'
+  | 'decode-failed'
+  | 'decode-budget'
+  | 'date-ineligible';
+/** One provider lead in the order its provider returned it, with its state. */
+type DecodedLead = { story: StoryCandidate; state: LeadState };
+/** Provider leads with the decode outcome of each, in provider order. */
+type DecodedStories = {
+  leads: DecodedLead[];
+  failures: string[];
+  attempts: number;
+  capped: boolean;
+};
+/** A lead that holds a publisher link, paired with its retained diagnostic. */
+type ObservedLead = {
+  story: StoryCandidate;
+  diagnostic: BriefingCandidateDiagnostic;
+};
+/** Why a collected lead cannot enter ranking, or undefined when it can. */
+type RejectionReason =
+  | 'unknown-date'
+  | 'future-date'
+  | 'stale'
+  | 'blocked-source'
+  | 'excluded'
+  | undefined;
+
+/** Passes non-Google leads through and decodes Google RSS leads within the run budget. */
+async function decodeProviderStories(
+  provider: CollectionProvider,
+  result: DiscoveryOutcome | undefined,
+  remainingBudget: number,
+  fetcher: Fetcher,
+  now: Date,
+): Promise<DecodedStories> {
+  if (result === undefined)
+    return { leads: [], failures: [], attempts: 0, capped: false };
+
+  if (provider !== 'google-news')
+    return {
+      leads: result.stories.map((story) => ({
+        story,
+        state: 'passthrough' as const,
+      })),
+      failures: [],
+      attempts: 0,
+      capped: false,
+    };
+
+  return decodeGoogleNewsStories(result.stories, remainingBudget, fetcher, now);
+}
+
+/**
+ * Decodes Google RSS links within the run budget, spending it on the leads that
+ * can still be used: a lead already rejected by the date gate is kept for the
+ * diagnostic trace but is never fetched, and the freshest eligible lead is
+ * attempted first.
+ */
+async function decodeGoogleNewsStories(
+  stories: StoryCandidate[],
+  remainingBudget: number,
+  fetcher: Fetcher,
+  now: Date,
+): Promise<DecodedStories> {
+  const leads: DecodedLead[] = stories.map((story) => {
+    const reason = dateRejectionReason(story, now);
+
+    return {
+      story,
+      state:
+        reason === 'stale' || reason === 'future-date'
+          ? 'date-ineligible'
+          : 'decode-budget',
+    };
+  });
+  const failures: string[] = [];
+  let attempts = 0;
+  let capped = false;
+
+  for (const lead of [...leads].sort(
+    (left, right) => timestampOf(right.story) - timestampOf(left.story),
+  )) {
+    if (lead.state === 'date-ineligible') continue;
+
+    if (attempts >= Math.max(0, remainingBudget)) {
+      capped = true;
+
+      continue;
+    }
+    attempts += 1;
+
+    const result = await decodeGoogleNewsPublisherUrl(
+      lead.story.sourceUrl,
+      fetcher,
+    );
+
+    if (!result.ok) {
+      failures.push(`${lead.story.sourceUrl}: ${result.message}`);
+      lead.state = 'decode-failed';
+
+      continue;
+    }
+
+    lead.story = {
+      ...lead.story,
+      id: result.publisherUrl,
+      sourceUrl: result.publisherUrl,
+      discoveryUrl: lead.story.sourceUrl,
+    };
+    lead.state = 'resolved';
+  }
+
+  return { leads, failures, attempts, capped };
+}
+
+/** Sort key for decode priority; a lead without a date sorts last. */
+function timestampOf(story: StoryCandidate): number {
+  const timestamp =
+    story.publishedAt === null ? NaN : Date.parse(story.publishedAt);
+
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+/** Records one query's provider returns separately from the leads it left unresolved. */
+function recordQueryDiagnostic(
+  diagnostics: BriefingDiagnostics,
+  job: CollectionJob,
+  result: DiscoveryOutcome | undefined,
+  decoded: DecodedStories,
+): void {
+  diagnostics.queries.push({
+    topicId: job.topic.id,
+    provider: job.provider,
+    query: job.query.slice(0, 4_000),
+    status: queryStatus(result, decoded),
+    returned: result?.stories.length ?? 0,
+    failureCount:
+      result === undefined
+        ? 1
+        : result.failures.length + decoded.failures.length,
+  });
+}
+
+function queryStatus(
+  result: DiscoveryOutcome | undefined,
+  decoded: DecodedStories,
+): 'ok' | 'partial' | 'failed' {
+  if (result === undefined) return 'failed';
+
+  return result.failures.length > 0 || decoded.failures.length > 0
+    ? 'partial'
+    : 'ok';
 }
 
 async function collectProviderResult(
@@ -296,7 +485,7 @@ async function collectProviderResult(
   maxResults: number,
   provider: CollectionProvider,
   failures: BriefingCollectionResult['failures'],
-): Promise<Awaited<ReturnType<DiscoveryCall>> | undefined> {
+): Promise<DiscoveryOutcome | undefined> {
   try {
     return await discover(query, maxResults);
   } catch (error) {
@@ -320,7 +509,7 @@ function providerExceptionMessage(error: unknown): string {
 function recordDiscoveryFailures(
   failures: BriefingCollectionResult['failures'],
   provider: CollectionProvider,
-  result: Awaited<ReturnType<DiscoveryCall>>,
+  result: DiscoveryOutcome,
 ): void {
   for (const failure of result.failures) {
     failures.push({ stage: 'discovery', provider, message: failure.message });
@@ -432,7 +621,7 @@ function updateRecoveredDateDiagnostics(
   sourceUrl: string,
   publishedAt: string,
   provenance: 'publisher-jsonld' | 'publisher-meta' | 'publisher-time',
-  reason: ReturnType<typeof rejectionReason>,
+  reason: RejectionReason,
 ): void {
   for (const metadata of diagnostics.candidates) {
     if (metadata.sourceUrl !== sourceUrl) continue;
@@ -443,18 +632,21 @@ function updateRecoveredDateDiagnostics(
   }
 }
 
-function rejectionReason(
+/**
+ * Briefing eligibility window: the one-day freshness target plus the same
+ * one-day buffer the search range filters carry, so a story published late on
+ * the previous day is still eligible for today's briefing.
+ */
+const FRESHNESS_WINDOW_DAYS = 2;
+
+/**
+ * Date-only freshness verdict. It is the part of a rejection that can be decided
+ * before a publisher link exists, so collection applies it before decoding.
+ */
+function dateRejectionReason(
   story: StoryCandidate,
-  preferences: Preferences,
-  topic: Topic,
   now: Date,
-):
-  | 'unknown-date'
-  | 'future-date'
-  | 'stale'
-  | 'blocked-source'
-  | 'excluded'
-  | undefined {
+): 'unknown-date' | 'future-date' | 'stale' | undefined {
   const timestamp =
     story.publishedAt === null ? NaN : Date.parse(story.publishedAt);
 
@@ -462,7 +654,21 @@ function rejectionReason(
 
   if (timestamp > now.getTime()) return 'future-date';
 
-  if (timestamp < now.getTime() - 86_400_000) return 'stale';
+  if (timestamp < now.getTime() - FRESHNESS_WINDOW_DAYS * 86_400_000)
+    return 'stale';
+
+  return undefined;
+}
+
+function rejectionReason(
+  story: StoryCandidate,
+  preferences: Preferences,
+  topic: Topic,
+  now: Date,
+): RejectionReason {
+  const dateReason = dateRejectionReason(story, now);
+
+  if (dateReason !== undefined) return dateReason;
 
   return nonDateRejectionReason(story, preferences, topic);
 }
@@ -600,6 +806,82 @@ function tierFor(
   return 'headline-only';
 }
 
+/**
+ * Records every returned lead in provider order and returns the leads that hold a
+ * publisher link, paired with their diagnostics. A lead without one is attributed
+ * to the decode step — `decode-failed` for an attempt that returned nothing,
+ * `decode-budget` for a lead the run's allowance never reached — and only where no
+ * earlier rejection would have excluded it anyway.
+ */
+function recordCandidateDiagnostics(
+  diagnostics: BriefingDiagnostics,
+  decoded: DecodedStories,
+  preferences: Preferences,
+  topic: Topic,
+  now: Date,
+  queryIndex: number,
+): ObservedLead[] {
+  const observed: ObservedLead[] = [];
+
+  for (const lead of decoded.leads) {
+    const diagnostic = attributeDecode(
+      candidateDiagnostic(lead.story, preferences, topic, now, queryIndex),
+      lead.state,
+    );
+
+    diagnostics.candidates.push(diagnostic);
+
+    if (lead.state === 'resolved' || lead.state === 'passthrough')
+      observed.push({ story: lead.story, diagnostic });
+  }
+
+  return observed;
+}
+
+/** Attributes a missing publisher link only where no earlier rejection applied. */
+function attributeDecode(
+  diagnostic: BriefingCandidateDiagnostic,
+  state: LeadState,
+): BriefingCandidateDiagnostic {
+  if (state !== 'decode-failed' && state !== 'decode-budget') return diagnostic;
+
+  return diagnostic.outcome === 'candidate-budget'
+    ? { ...diagnostic, outcome: state }
+    : diagnostic;
+}
+
+/** Retains eligible leads and the undated ones still worth a date attempt. */
+function selectLeads(
+  observed: ObservedLead[],
+  snapshot: BriefingCollectionSnapshot,
+  topic: Topic,
+  candidates: Map<string, CandidateLead>,
+  undated: Map<string, CandidateLead>,
+): void {
+  for (const { story, diagnostic } of observed) {
+    if (diagnostic.outcome === 'candidate-budget')
+      addCandidate(candidates, story, topic);
+
+    if (
+      diagnostic.outcome === 'unknown-date' &&
+      nonDateRejectionReason(story, snapshot.preferences, topic) === undefined
+    )
+      addCandidate(undated, story, topic);
+  }
+}
+
+/** Keeps the leading fair topic order and drops leads beyond the candidate cap. */
+function pruneCandidateBudget(
+  candidates: Map<string, CandidateLead>,
+  preferences: Preferences,
+  maximum: number,
+): void {
+  for (const excess of fairEvidenceOrder(candidates, preferences.topics).slice(
+    maximum,
+  ))
+    candidates.delete(excess.story.sourceUrl);
+}
+/** Bounded metadata for one returned lead, including its original discovery link. */
 function candidateDiagnostic(
   story: StoryCandidate,
   preferences: Preferences,
@@ -610,6 +892,7 @@ function candidateDiagnostic(
   return {
     queryIndex,
     sourceUrl: story.sourceUrl,
+    discoveryUrl: story.discoveryUrl,
     title: story.title.slice(0, 500),
     publisher: story.publisher?.slice(0, 500) ?? null,
     engines: (story.engines ?? []).slice(0, 20),

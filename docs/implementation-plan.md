@@ -11,7 +11,7 @@ milestone complete when only a smaller slice is delivered.
 | **1. Git, stack, hygiene**                  | Initialize Git on `main`; scaffold minimal React/Worker application; configure tooling, documentation, and CI | Fresh install, local startup, and all baseline checks pass; you review stack and structure before features                           | Completed; foundation committed                                |
 | **2. Discovery/evidence feasibility**       | Google News adapter, publisher-link resolution, bounded article extraction, fixtures for your three topics    | Demonstrate relevant results, usable article text, working links, and explicit failure outcomes from Workers; report actual coverage | Feasibility delivered with limitations; local inspection added |
 | **3. App shell and persistent preferences** | Five responsive screens, singleton agent, SQLite migrations, editable preferences, propose/apply flow         | Preferences survive reload/restart; prompt-controlled summary style is preserved; rejected proposals change nothing                  | Completed and accepted                                         |
-| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.3.1–4.3.3 awaiting review                       |
+| **4. Manual briefing**                      | Generate-now Workflow, ranking, deduplication, citations, Today and Archive                                   | Produces a useful briefing across all three topics; exclusions and length hold; retries cannot duplicate publication                 | In progress: 4.3–4.4.10 awaiting review                        |
 | **5. Grounded chat and memory**             | Story follow-ups, persistent conversation history, prior-coverage comparison, deletion controls               | Answers cite available evidence; meaningful updates explain what changed; missing evidence is acknowledged                           | Chat foundation implemented; awaiting review                   |
 | **6. Scheduled operation and deployment**   | Daily scheduling, Access protection, run status, retention cleanup, usage tracking, deployment instructions   | Scheduled/manual collisions, partial failures, timezone behavior, authentication, and mobile flows pass                              | Planned                                                        |
 
@@ -30,9 +30,10 @@ but the latest Worker sample did not establish successful article coverage.
 These are measured examples, not a guaranteed coverage rate.
 
 Keep application-side filtering for now. It runs in the Worker, not browser
-JavaScript: query all three news engines, filter returned search-reported dates
-against inclusive rolling UTC ranges, then cap results. Day = 24 hours,
-month = 31 days, year = 365 days. Filtered searches exclude undated/future leads.
+JavaScript: query the configured news engines, filter returned search-reported
+dates against inclusive rolling UTC ranges, then cap results. Every range
+carries a one-day buffer: day = 2 days, month = 32 days, year = 366 days.
+Filtered searches exclude undated/future leads.
 
 The provider-side time-filter follow-up is tracked as
 [DISC-06](data-pipeline.md#9-improvement-backlog). Current filtering can miss
@@ -366,6 +367,106 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Recorded the deployment plan as Increment 6 scope (hosting now,
+  daily trigger later). `npx wrangler deploy --dry-run --config wrangler.jsonc`
+  validated the deployment posture without publishing anything: the pinned
+  SearXNG container image builds from `infra/searxng/Dockerfile`, five client
+  assets are read, the Worker bundles to 2.97 MB (582 KB gzip), and all four
+  bindings resolve (`PERSONAL_BRIEFING`, `SEARXNG`, `BRIEFING_WORKFLOW`, `AI`).
+  The same check exposed a real defect in the documented deploy command: the Vite
+  plugin redirects Wrangler to `dist/<worker>/wrangler.json`, where `assets` is
+  rewritten relative but the container Dockerfile path is not, so the documented
+  `npx wrangler deploy` aborts on a missing file. Readiness gaps recorded: no
+  authentication exists and `localUserId` is hardcoded, so Access protection must
+  precede any exposure; no `observability` block; `SEARXNG_SECRET` exists only as
+  a local Docker value; and deletion/retention (STORE-01) plus the two reliability
+  guards (BRIEF-04, BRIEF-01) remain open before unattended runs. No cloud
+  resources were created and nothing was deployed.
+- **2026-09-20:** Implemented 4.4.10, awaiting review: chat can now read the
+  article behind a published story. Migration 9 adds `briefing_evidence`;
+  publication copies one bounded extract (≤12,000 characters) per cited source
+  from the temporary evidence before it is deleted, using the article body when
+  usable and the attributed description otherwise, and the chat turn supplies
+  those extracts with their tier and retrieval time. The chat prompt now states
+  that the extract may be incomplete and that the live page may differ. This is
+  an explicit, reasoned exception to storing citations and metadata only, taken
+  to fix follow-ups that could answer only from a one-sentence summary; it can be
+  revisited if chat moves to on-demand retrieval. `npm run check` passed
+  formatting, lint, typechecks, 185 tests, and the production build. Verified
+  live through the browser: for run `2d4b7f5e`'s Qwen story the answer named the
+  Interleave architecture and the `qwen3.8-livetranslate-flash-realtime` endpoint
+  over WebSocket, none of which appears in the stored summary. No deployment or
+  credential changes.
+
+- **2026-09-20:** Verified the fresh-install path by deleting the entire local
+  state directory and rebuilding from scratch. The Worker returned
+  `{configured:false}` with no saved document, migrations 2–9 applied in one pass,
+  and every application table existed with zero rows before any user data was
+  written. Restoring the saved preferences document through the normal API
+  (`expectedRevision: 0`) produced revision 1, and the first generation then
+  published a four-item partial edition in 71 seconds retaining article text for
+  its three article-tier items (5,286–6,969 characters) and the 152-character
+  description for its description-tier item — the first live exercise of
+  description retention. Transient candidate evidence was deleted as designed
+  (`briefing_candidates` empty). Asking the same UIDAI follow-up that previously
+  answered "the briefing context does not provide specific details" now returned
+  the plan's named focus, proof-of-concept work, and the OCI legal-framework
+  intent, still disclosing that specifics were absent from the retrieved text.
+
+- **2026-09-20:** Implemented 4.4.9, awaiting review: SearXNG's Google News and
+  Brave News engines are disabled, every date-range filter carries a one-day
+  buffer, the briefing's own eligibility window is now an inclusive two days
+  (one-day target plus the same buffer, by user decision), and Google leads are
+  freshness-filtered and newest-first ordered before decoding. Disabling the two
+  engines cut SearXNG engine failures in a
+  three-topic collection from 14 to 4 (bing news only) and left 7 of 12 queries
+  `ok`; the trade-off is fewer dated results, since Bing and DuckDuckGo mostly
+  return undated ones. `decodeGoogleNewsStories` now marks stale/future leads
+  `date-ineligible` without fetching them and attempts the newest eligible lead
+  first, so run `f76e90ab` spent all four decodes on fresh leads where the
+  earlier run wasted one on a stale lead. That run published a two-item partial
+  edition. `npm run check` passed formatting, lint, typechecks, 179 tests, and
+  the production build. Review also caught a real duplicate: a second same-day
+  run republished an already-covered story under an identical headline and URL by
+  asserting a substantial update drawn from the same article, which the
+  exact-headline guard cannot detect (recorded under BRIEF-01). No deployment or
+  credential changes.
+
+- **2026-09-20:** Implemented 4.4.8: normal runs now collect from SearXNG and
+  the decoded Google News RSS channel together, awaiting review. `providerCalls`
+  no longer returns SearXNG alone; it always includes Google News RSS, adds the
+  private SearXNG channel when configured, and keeps GDELT only without SearXNG
+  (live GDELT requests are still rate-limited). The run-wide decode budget is now
+  divided across the scheduled Google queries, so one topic can no longer spend
+  all of it. `npm run check` passed formatting, lint, typechecks, 178 tests, and
+  the production build. Live multi-channel collection against the local container:
+  six SearXNG queries returned eight candidates each but every query was `partial`
+  (Bing connection errors, Google News CAPTCHA); six Google News RSS queries
+  returned eight each and were `ok`; 48 RSS leads (30 stale by RSS date), four
+  decode attempts, three publisher-linked leads, and five collected candidates
+  (three usable articles, one description, one headline-only). Two real
+  generate-briefing runs then exercised the Workflow path: both traces recorded
+  both channels, the second published two article-tier items with one supplied
+  only by the decoded Google News channel, and the first failed at composition on
+  a pre-existing model-output guard now tracked as BRIEF-04. Decode-budget tuning
+  and freshness-first decoding are tracked as DISC-09. No deployment or credential
+  changes.
+
+- **2026-09-20:** Implemented 4.4.7 (DISC-08) Google News publisher-link
+  decoding, awaiting review. The decoder had been written but left the tree red:
+  the budget schema capped decodes at 20 while a fixture used 24,
+  `collectBriefingCandidates` exceeded the complexity limit, and the live Google
+  article page had grown to roughly 591 KB against a 200 KB bound, so every real
+  decode failed closed. The bound is now 1 MB, the collection loop is split into
+  named helpers, and leads left unresolved by the budget or a challenge stay in
+  the diagnostic trace as `decode-failed` instead of vanishing before it. Live
+  check: three of three RSS leads decoded and all three publisher pages returned
+  usable article text with matching JSON-LD dates. Review caught that the Workflow
+  still configures SearXNG, whose exclusive channel selection bypasses the RSS
+  adapter entirely, so no normal generate-briefing run reaches the decoder yet;
+  DISC-08 is Partial and enabling the channel is the next decision. No deployment
+  or credential changes.
+
 - **2026-09-19:** Implemented 4.4.4 retained candidate metadata, awaiting review.
   `npm run check` passed formatting, lint, typechecks, 153 tests, and production
   build. The local Worker migrated successfully; a live failed run retained 32
@@ -504,7 +605,7 @@ quality or daily coverage.
 On 2026-09-19 the user authorized all four slices of the Today review plan
 as a combined increment. Discovery and evidence selection now rotate across
 enabled topics before spending their shared remainder. Candidate retention is
-fairly capped; collection eligibility uses the inclusive preceding 24 hours at
+fairly capped; collection eligibility uses the inclusive preceding two days at
 the Workflow's fixed timestamp, excluding future and unknown dates. This is
 search-reported freshness, not verified publisher dating (DISC-03).
 
@@ -620,6 +721,203 @@ only stale candidates. The run failed honestly because no item met the complete
 relevance, novelty, and evidence policy. The report is reproducible with
 `npm run evaluate:briefing-run -- 470562d3-7b1f-4a87-ad18-faa0dccdcd01`.
 
+### 4.4.7 — Google News publisher-link decoder: implemented, awaiting review
+
+DISC-08 was conditional on the SearXNG Google News CAPTCHA suspension materially
+limiting fresh evidence coverage. Run `470562d3` met that condition: Google News
+was suspended and contributed no retained candidate. This increment adds the
+decoder the feasibility scripts had already verified, behind the same normalized
+discovery contract.
+
+`discovery/google-news-decoder.ts` resolves one Google RSS item to its publisher:
+it fetches the Google article page, reads the `data-n-a-sg` signature and
+`data-n-a-ts` timestamp, posts them to the undocumented `batchexecute` endpoint,
+and validates the returned external URL. It performs no retries and no CAPTCHA
+workarounds. Collection decodes before deduplication, so exact-URL dedupe,
+blocked-source checks, and evidence retrieval all operate on the publisher URL,
+and a decoded lead keeps its Google link as `discoveryUrl`.
+
+Cost and honesty bounds: two requests per decode with a 1 MB page bound; one
+run-wide `maxGoogleNewsDecodes` budget (default 4, schema ceiling 60) shared
+across Google queries and disclosed once when exhausted; a lead the budget or a
+challenge leaves unresolved is never fetched, keeps its Google link in the
+retained diagnostic trace with the new `decode-failed` outcome, and leaves the
+query's `returned` count as the provider's actual return count.
+
+Limitations: the protocol is undocumented and may change, rate-limit, or
+challenge automated requests; the article page has grown before (200 KB → over
+590 KB on 2026-09-20), and a page that outgrows the bound fails closed as an
+unresolved lead. The decoder supplies a link, not evidence quality: publisher
+access still determines whether retrieval succeeds. Reachability is the larger
+limitation: `providerCalls` returns the SearXNG channel alone whenever SearXNG is
+configured, and the Workflow always configures it, so this increment changes no
+normal generate-briefing run yet. Enabling the Google News channel alongside
+SearXNG — with its query, decode, and evidence budget shares — is the next
+reviewable decision, not an automatic consequence of this work.
+
+Validation: `npm run check` passes. Interface tests cover article-ID shape, the
+two-request protocol, challenge and malformed envelopes, credential/Google-URL
+rejection, unresolved-lead retention with no evidence fetch, and the decode
+budget disclosure. A live check on 2026-09-20 decoded three of three RSS leads
+and retrieved usable article text for all three publisher pages (BBC 3,688,
+TechCrunch 4,631, Guardian 5,876 characters) with matching JSON-LD publication
+dates. Slice 4.4.8 then enabled the channel: `providerCalls` adds the decoded
+Google News channel to every run alongside a configured SearXNG instance and
+splits the decode budget across the scheduled Google queries. Next slice:
+raise the decode default against measured yield and decode only date-eligible
+leads first (DISC-09), then re-evaluate composition relevance on the richer
+candidate set.
+
+### 4.4.8 — Google News channel enabled alongside SearXNG: implemented, awaiting review
+
+The Workflow always configures SearXNG, and `providerCalls` previously returned
+that channel alone, so the Google News adapter — and therefore the decoder — never
+ran in a normal briefing. This slice makes the channels additive: every run
+includes Google News RSS, includes SearXNG when configured, and keeps GDELT only
+on the non-SearXNG path because live GDELT requests still return 429.
+
+The run-wide `maxGoogleNewsDecodes` budget (default 4) is now divided across the
+scheduled Google queries, mirroring the fair topic order and the evidence
+allocation. Without that split, the first topic's Google query consumed every
+decode and later topics received none.
+
+Measured live against the local SearXNG container on 2026-09-20 with the default
+budget: six SearXNG queries each returned eight candidates but every one was
+`partial` — `bing news: HTTP connection error` and `google news: CAPTCHA` — while
+six Google News RSS queries returned eight each and were `ok`. The run produced 48
+RSS leads of which 30 were stale by RSS date, four decode attempts (the default
+budget, one per Google query for the first four), three publisher-linked leads,
+and five collected candidates: three usable articles and one description from
+SearXNG, plus one headline-only Google News item (BBC, Liverpool) that SearXNG had
+not supplied. Total run duration was roughly 31 seconds.
+
+End-to-end validation through the real Workflow and the local Worker, same day:
+two `POST /api/briefings/generate` runs were started and their retained traces
+read back. Both recorded the two channels — one run seven SearXNG and five Google
+News queries, the other six and five — with the Google News queries `ok` while
+every SearXNG query stayed `partial` (Bing connection errors, Google News
+CAPTCHA). One run failed at composition with `New coverage cannot claim a
+previous item.`, a pre-existing guard that rejects a model item marked as new
+coverage while claiming prior items; the run history shows comparable model-driven
+failures before this change (`error code: 1031`, a Zod rejection, and no-eligible
+stories), and the second run published. The published edition carried two
+article-tier items, and one of them — a story both channels did not share — was
+supplied only by the decoded Google News channel. A story both channels returned
+deduplicated to a single item. The composition guard is tracked as BRIEF-04.
+
+Diagnostics: review of the recorded runs showed the single `decode-failed`
+outcome was conflating two different states, so it is now split — `decode-failed`
+means an attempt ran and returned nothing (challenge, invalid envelope, HTTP
+failure), `decode-budget` means the run's allowance never reached that lead. The
+conflation hid the real finding: neither recorded run had any endpoint-level
+decode failure. Every budgeted attempt succeeded, and all 13 `decode-failed` marks
+were leads whose query share was `0` or already spent. A failed decode also marks
+its query `partial`, which the tests now cover alongside the split.
+
+Limitations: the default decode budget of four leaves most fresh RSS leads
+unresolved and, with five or six Google queries, gives the last one no decode at
+all. One of four attempts in the recorded run was spent on a lead that was stale
+by RSS date, so decoding still happens before the date gate. Both are the tuning
+targets under DISC-09, recorded rather than silently accepted.
+
+### 4.4.9 — Engine set, buffered ranges, and freshness-first decoding: implemented, awaiting review
+
+Three changes were requested together: stop using the two engines that could not
+supply usable dated results, widen each application range filter by a day, and
+make the date gate apply before a decode is spent.
+
+`infra/searxng/settings.yml` disables SearXNG's `google news` and `brave.news`
+engines; `google news` is CAPTCHA-suspended and `brave.news` returns results
+without publication dates. The `brave` web engine stays defined but disabled
+because the news engine shares its network configuration and startup fails with
+`KeyError: 'brave'` when the parent is removed. The pinned image and settings
+remain shared between local Compose and the private Cloudflare Container.
+
+`discovery/searxng.ts` adds `RANGE_BUFFER_DAYS = 1`, so the Worker window is the
+requested range plus one day: day → 2 days, month → 32 days, year → 366 days.
+Engine timestamps are rounded to the day and can lag the publisher, so the
+strict boundary dropped results that belong to the range.
+
+`decodeGoogleNewsStories` now classifies every returned lead before spending the
+allowance. Stale and future leads become `date-ineligible`, are never fetched,
+and keep their date rejection in the trace; eligible leads are attempted
+newest-first with undated leads last. The lead-state refactor also preserves
+provider order in the retained diagnostics instead of regrouping by outcome.
+
+Measured against the local container on 2026-09-20, same three topics and
+defaults: engine failures fell from 14 to 4 (bing news only), engines used were
+duckduckgo news 33 / reuters 22 / bing news 16, and 7 of 12 queries reported
+`ok`. Run `f76e90ab` decoded four of four attempts on fresh leads (16:14, 16:09,
+06:35, previous evening) where the earlier run spent one of four on an already
+stale lead, and it published a two-item partial edition. One item replaced an
+ft.com source that returned 403 with an accessible business-standard.com article
+about the same event, which is the same-event replacement the fallback policy
+describes.
+
+The briefing's own eligibility window carries the same buffer. By user decision,
+`FRESHNESS_WINDOW_DAYS = 2` in `dateRejectionReason` replaces the fixed
+twenty-four hours, so a story published late on the previous day is eligible
+while future and undated leads stay excluded. A boundary test asserts that a lead
+exactly two days old is accepted, that one second older is stale, and that the
+stale lead is never decoded.
+
+Verified live: livemint's Aadhaar story carried a 2026-09-19T08:32 RSS date, was
+decoded and rejected as `stale` by the twenty-four-hour gate in run `e5da082e`,
+and is the published item of run `d238bf97` under the two-day window. Run
+`d238bf97` published in 30 seconds with 10 failures. The intervening run
+`6278590e` collected successfully and then failed at composition on the
+contradictory-update guard, which has now failed two of the last six live runs
+(BRIEF-04).
+
+Limitations: fewer results now carry a usable date, because Brave News was one
+of the few dated sources, and SearXNG result sets vary enough between runs that
+single-run stale counts are not comparable — the 24-hour and 48-hour runs showed
+45 and 41 stale SearXNG leads, but the later windows run returned 55 stale of 55
+because its own results were older. Raising the decode default stays open
+pending a yield measurement (DISC-09), and the run also exposed a same-day
+duplicate-publication path that needs a deterministic prior-URL check (BRIEF-01).
+
+### 4.4.10 — Retained article text for grounded follow-ups: implemented, awaiting review
+
+Follow-ups about the UIDAI story could only restate a 171-character summary and
+correctly reported that the briefing context lacked detail. Investigation showed
+why: the extracted article body was fetched during collection, used for the
+summary, and then deleted with the rest of the run's temporary evidence at
+publication, so nothing about the article survived for chat. The model was not
+failing; there was nothing for it to read.
+
+By explicit user decision, one bounded extract per cited source is now retained
+in a side table rather than deleted. Migration 9 adds `briefing_evidence`
+(`run_id`, `item_id`, `source_url`, `publisher`, `evidence_tier`, `retrieved_at`,
+`characters`, `truncated`, `text`). Publication copies the text inside its own
+transaction: the extracted article body when the evidence is usable, otherwise
+the attributed description that supported a description-tier item, capped at the
+existing 12,000-character extraction limit and flagged when truncated.
+Headline-only sources contribute nothing.
+
+The chat turn reads those rows for its session's run and item and supplies them,
+labelled `[S1] retained <timestamp>` and divided across the item's sources so a
+multi-source item still shows each one a fair window. The prompt states the
+extract is bounded and may differ from the live page, and keeps the requirement
+to say what is missing rather than claim a full read. Earlier briefings have no
+retained text and say so explicitly.
+
+Cost and scope: measured extracts run 3.8k–7k characters, so an edition of ten
+items is roughly 53 KB and a year of daily editions about 19 MB — inside the
+included Durable Object allowance by orders of magnitude. The real cost is the
+model input, roughly +3,000 tokens per turn against a ~280-token context today,
+about +14 neurons at the recorded rate. Retention is deliberately the one
+exception to the "no article copies" rule and is revisited if chat later moves
+to on-demand retrieval.
+
+Validation: `npm run check` passes 185 tests. Tests cover the context with and
+without retained text, the across-source cap, publication retention for cited
+usable sources, owner scoping, the truncation ceiling, and description-tier
+retention. Live browser verification on run `2d4b7f5e`: the Qwen story's answer
+reported the Interleave architecture and the `qwen3.8-livetranslate-flash-realtime`
+endpoint over WebSocket, details present only in the retained article text.
+Deletion of retained rows with their briefing remains STORE-01.
+
 ## Increment 5.1 — Grounded chat foundation: implemented, awaiting review
 
 `PersonalBriefingAgent` remains the single durable owner of preferences,
@@ -663,3 +961,105 @@ the Agent transport transcript. Migration 8 adds `chat_sessions` and
 browser reload with both user and Agent turns, then correctly reopened its
 original archived briefing and citation. The next live answer included `[S1]`;
 code now adds the selected story's first code-owned label if the model omits it.
+
+## Increment 6: Cloudflare hosting — plan, not started (2026-09-21)
+
+Scope decided by the user: host the current system on Cloudflare, and treat the
+daily trigger as a later increment. Backlog owners are
+[DEPLOY-01](data-pipeline.md#9-improvement-backlog) (private hosted SearXNG +
+deployment), [DEPLOY-02](data-pipeline.md#9-improvement-backlog) (Access
+protection), [COST-01](data-pipeline.md#9-improvement-backlog) (usage and
+budgets), with reliability prerequisites under BRIEF-04, BRIEF-01 and STORE-01.
+Scheduling stays [SCHED-01](data-pipeline.md#9-improvement-backlog) and is
+explicitly out of scope for this increment.
+
+### Readiness assessment
+
+Proven by `npx wrangler deploy --dry-run --config wrangler.jsonc`: the container
+image builds from the pinned `infra/searxng/Dockerfile` with the shared settings,
+five client assets are read, the Worker bundles to 2.97 MB (582 KB gzip), and
+every binding resolves — `PERSONAL_BRIEFING` and `SEARXNG` Durable Objects,
+`BRIEFING_WORKFLOW`, and `AI`. Migrations 1–9 were separately verified on a
+deleted state directory, and the first generation on that fresh database
+published a four-item edition, so schema bootstrapping is not a deployment risk.
+
+Runtime paths are already environment-aware: `searxngProvider` uses
+`SEARXNG_BASE_URL` locally and the private container binding otherwise, and both
+diagnostic surfaces (`INSPECTION_ENABLED`, `PREFERENCES_DIAGNOSTICS_ENABLED`)
+return 404 unless their binding is exactly `true`, so neither ships enabled.
+
+Three gaps stand between this and a private hosted deployment:
+
+1. **No authentication exists.** Every route and the Agent use a hardcoded
+   `localUserId = 'single-user'` (`routes/briefings.ts:17` and siblings), and
+   `/agents/*` is served openly. `workers_dev` and `preview_urls` are both false,
+   so nothing is reachable today — but the first hostname added would expose one
+   user's preferences, briefings, chat, and the generate trigger to anyone.
+   Access protection is therefore a _prerequisite_ for exposure, not a follow-up
+   (DEPLOY-02).
+2. **The documented deploy command fails.** `npx wrangler deploy` resolves a
+   plugin-generated config at `dist/<worker>/wrangler.json` whose `assets`
+   directory is rewritten to `../client` while `containers[].images.default
+.dockerfile` is not, so it looks for `dist/…/infra/searxng/Dockerfile` and
+   aborts. Deploying with the original config works (`--config wrangler.jsonc`,
+   verified by dry-run) and must be scripted and documented.
+3. **Operational blind spots.** No `observability` block, so hosted logs are not
+   retained; `SEARXNG_SECRET` is required by the container but only exists as a
+   local Docker value; nothing measures hosted usage against the sub-USD-10–20
+   target (COST-01); and there is still no deletion path for briefings, retained
+   evidence, or the unimplemented 90-day deduplication memory (STORE-01).
+
+### Phases
+
+**P1 — Pre-flight and deploy mechanics (no cloud changes).** Add a `deploy`
+npm script wrapping `npm run build && wrangler deploy --config wrangler.jsonc`,
+correct the README, add an `observability` block, and reject a production
+configuration that sets `SEARXNG_BASE_URL` so the container cannot be bypassed
+silently. _Acceptance:_ `npm run deploy --dry-run` succeeds and resolves all four
+bindings plus the container image; README documents the real command.
+
+**P2 — Access protection before exposure (DEPLOY-02).** Create the Access
+application and policy for the single permitted identity across `/`, `/api/*` and
+`/agents/*`, then validate `Cf-Access-Jwt-Assertion` in the Worker (signature via
+JWKS, audience, issuer, expiry) and map the JWT `sub` into the `UserId` used by
+every route and by `idFromName`. Keep the local placeholder only when the local
+diagnostic binding is enabled. _Acceptance:_ an unauthenticated request to any
+API or Agent route is rejected; a different identity cannot read or write the
+first user's data; local development still works without Access.
+
+**P3 — First deployment (DEPLOY-01).** `wrangler secret put SEARXNG_SECRET`,
+deploy, and verify the container starts and answers through its binding. Then
+record hosted-IP engine coverage — which engines respond, how many results carry
+dates, and whether the news engines treat the container's egress IP differently
+than localhost — because that decides whether hosted briefings match what we see
+locally. _Acceptance:_ `/api/health` returns ok, one manual generation publishes
+an edition from the hosted container, diagnostic routes return 404, and the
+engine-coverage measurement is recorded with its limitations.
+
+**P4 — Cost and quality measurement (COST-01, EVAL-01).** Read the Cloudflare
+dashboard for Worker, Durable Object, Workflow, container, and Workers AI usage
+across several hosted runs; confirm or refute the sub-USD-10–20 target; record
+relevance/freshness/evidence rates for hosted runs alongside the local ones.
+_Acceptance:_ measured usage per run and an explicit budget decision; no
+application-side telemetry added.
+
+**P5 — Reliability before unattended operation.** BRIEF-04 (the
+contradictory-update guard, recorded in `docs/data-pipeline.md`);
+the BRIEF-01 same-day duplicate path; and STORE-01 retention/deletion including
+the unimplemented 90-day deduplication memory. _Acceptance:_ a scheduled-style
+repeated run cannot lose an edition to one contradictory model item and cannot
+republish an already-covered citation.
+
+### Risks and open decisions
+
+- **Container cold start.** `sleepAfter = '10m'` means the first search after an
+  idle period pays container startup inside the Workflow's 10-minute collection
+  step; the first hosted run should be timed.
+- **Egress-IP behaviour** may differ materially from localhost (Bing already
+  fails locally; the hosted IP may be treated differently by every engine). This
+  is the main unknown for hosted briefing quality, not a code problem.
+- **Single-user assumption** is baked into the Agent identity; a second user is a
+  separate design, and P2 only enforces that exactly one identity can reach it.
+- **Hostname choice** (workers.dev versus a custom domain) and whether the
+  container needs a larger instance for the deployed engine mix are deployment
+  decisions, not code.

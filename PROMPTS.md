@@ -833,3 +833,240 @@ retrieval.”
 **Outcome:** Added UX-04 to the single data-pipeline backlog. The requested
 evidence-retrieval assessment will be planned as a benchmarked, reviewable
 increment before changing the current bounded direct-fetch extractor.
+
+### Google News publisher-link decoder, increment 4.4.7 / DISC-08 (2026-09-20)
+
+**User request:** “review the current changes - we want to implement the google
+news publisher link decoder which was stopped in between. Can you checkw aht is
+implemented and if the repo has plan details”
+
+**User continuation:** “can you first tell me the current condition before
+changes you did, and what is planned next”
+
+**User continuation:** “let's bound it at 1000 kb. explain a little more about
+the ceiling question - and how do we come to 60 as a suggestion when current
+test wants 24. undecoded leads recommendation looks good to me”
+
+**Material coding prompt:** Finish the stopped Google News publisher-link
+decoder increment against backlog DISC-08. Reuse the protocol the feasibility
+scripts verified: read the article page's `data-n-a-sg`/`data-n-a-ts`, post them
+with the opaque ID to `batchexecute`, validate the returned external URL. Decode
+inside collection before deduplication so dedupe, blocked-source checks, and
+evidence use the publisher URL, and preserve the Google link as `discoveryUrl`.
+Bound the page at 1 MB with no retries and no CAPTCHA workarounds. Raise the
+`maxGoogleNewsDecodes` ceiling to 60 while keeping the default at 4. Keep leads
+the budget or a challenge leaves unresolved visible in the retained diagnostic
+trace as `decode-failed` and never fetch them; keep `returned` counting provider
+returns, not decoded leads. Restore the red quality gate, add regression
+coverage, and update the plan, backlog, README, and architecture notes.
+
+**Outcome:** `src/server/discovery/google-news-decoder.ts` is implemented and
+covered by interface tests for article-ID shape, the two-request protocol,
+challenge and malformed envelopes, and Google/credential URL rejection. The
+final tree fixed three defects in the stopped work: the 20-decode schema ceiling
+that rejected a 24-decode fixture, a `collectBriefingCandidates` complexity
+violation (now split into named helpers with a `DiscoveryOutcome` contract), and
+a 200 KB page bound against a real ~591 KB Google article page. `npm run check`
+passes. A live check decoded three of three RSS leads and retrieved usable
+article text for all three publisher pages (BBC 3,688, TechCrunch 4,631,
+Guardian 5,876 characters) with matching JSON-LD publication dates. No
+deployment, credential, or provider-configuration change.
+
+### Google News channel enabled alongside SearXNG, increment 4.4.8 (2026-09-20)
+
+**User request:** “Does generare briefing now use the google adapter with the
+publisher decoder logic”
+
+**User continuation:** “Implement A”
+
+**Material coding prompt:** Make the decoded Google News RSS channel part of a
+normal generate-briefing run instead of the non-SearXNG path only. `providerCalls`
+must always include Google News RSS, include the private SearXNG channel when
+configured, and keep GDELT only when SearXNG is absent because live GDELT
+requests still return 429. Split the run-wide decode budget across the scheduled
+Google queries so one topic cannot spend all of it. Update the channel-selection
+and decode-fairness tests, then update the backlog, plan, README, and architecture
+notes, and measure a real multi-channel collection against the local SearXNG
+container.
+
+**Outcome:** `providerCalls` now builds an additive channel list and
+`decodeBudgetFor` divides the remaining decode allowance across the scheduled
+Google queries. The Workflow needed no change: it already passes the SearXNG
+provider. Tests cover the additive channel list, the SearXNG-failure case where
+the Google channel still collects, and per-query decode shares. Live measurement
+with the default budget: six SearXNG queries returned eight candidates each but
+all were `partial` (Bing connection errors, Google News CAPTCHA), six Google News
+RSS queries returned eight each and were `ok`, 48 RSS leads (30 stale by RSS
+date), four decode attempts, three publisher-linked leads, and five collected
+candidates including one headline-only Google News item SearXNG did not supply.
+`npm run check` passes 178 tests. Decode-budget tuning and freshness-first
+decoding are recorded as DISC-09.
+
+### Decode-failure diagnostics split (2026-09-20)
+
+**User request:** “on what endpoints are decode failing?>”
+
+**Material coding prompt:** Answer from the retained run records rather than the
+aggregate outcome counts: separate a decode attempt that failed at a Google
+endpoint from a lead the run's decode allowance never reached, and make that
+distinction visible in the retained diagnostic trace instead of one
+`decode-failed` label covering both.
+
+**Outcome:** The recorded runs contained no endpoint-level decode failure at all.
+Every budgeted attempt succeeded — four of four decoded to real publishers — and
+all 13 `decode-failed` marks were leads whose query share was `0` or already
+spent, including one whole query that received no share. The single label was
+conflating the two states, which is why the answer required reading raw JSON. The
+trace now distinguishes `decode-failed` (attempt returned nothing) from
+`decode-budget` (never attempted), a failed decode marks its query `partial`, and
+tests cover both paths plus the failed-vs-skipped separation. `npm run check`
+passes 178 tests.
+
+### Decode limits measurement (2026-09-20)
+
+**User request:** “what are the limits on decoding - is there any limit from
+google's site?”
+
+**Material coding prompt:** Measure Google's actual behaviour on the decode path
+instead of assuming: sequential page and `batchexecute` requests at the
+configured ceiling, recording per-request status, bytes, latency, `Retry-After`,
+challenge markers, and error rows; and separate our own configured limits from
+Google-side limits.
+
+**Outcome:** No Google-side quota was found. 310 sequential article-page
+requests (~176 MB) completed in 87 s with every response HTTP 200 — no 429, no
+`Retry-After`, no challenge — at p50 ≈ 210–250 ms per page; each page is
+259–595 KB (median ≈ 582 KB) while the decoder response is ≈170–200 bytes. The
+measurement first appeared to show total decoding failure, which review traced to
+the probe's own payload: `f.req` needs triple nesting (`[[["Fbv4je", …]]]`), and a
+double-nested envelope (or an id still carrying `?oc=5`) is answered with a
+bodiless HTTP 400 while the page request still succeeds. The shipped module was
+correct throughout and decoded on every attempt. Recorded in
+`docs/discovery-link-verification.md`, with the robots.txt `/rss/` disallow and
+the practical cost model (budget × ≈582 KB) noted as the real limits.
+
+### Engine set, buffered date filters, and freshness-first decoding (2026-09-20)
+
+**User request:** “Disable google and brave in searXNG and then update the
+filtering on client side to include an extra buffer like a day for each filter.
+1 day results should also filter in the past 2 days. 1 month - 1month + 1day. Do
+this, and run the generation. If dates are available earlier before decoding, we
+should filter them before or sort them to decode the latest ones first”
+
+**Material coding prompt:** Disable SearXNG's Google and Brave news engines while
+keeping the shared pinned settings working for both local Compose and the private
+Container. Add a one-day buffer to every application range filter (day → 2,
+month → 32, year → 366). Move the freshness gate ahead of decoding: never fetch a
+stale or future-dated Google lead, and attempt the newest eligible lead first.
+Keep the retained diagnostic trace in provider order and update tests and docs,
+then run a real generate-briefing run and report its per-provider trace.
+
+**Outcome:** `settings.yml` now runs bing news, duckduckgo news, and reuters;
+`google news` and `brave.news` are disabled and the `brave` web engine stays
+defined but disabled because removing it breaks startup. `RANGE_BUFFER_DAYS = 1`
+widens each range. `decodeGoogleNewsStories` classifies leads into resolved /
+passthrough / decode-failed / decode-budget / date-ineligible, never fetches
+date-ineligible leads, and sorts eligible ones newest-first with undated last.
+`npm run check` passes 179 tests. Run `f76e90ab` (same three topics, default
+budgets) published a two-item partial edition with 14 failures instead of 23,
+SearXNG engine failures down from 14 to 4, 7 of 12 queries `ok`, and all four
+decodes spent on fresh leads. The run also exposed a same-day duplicate
+publication path recorded under BRIEF-01.
+
+### Briefing window expansion (2026-09-20)
+
+**User request:** “If you meant the briefing window too, that's a one-line change
+in rejectionReason plus boundary tests - i want the briefing window expansion”
+
+**Material coding prompt:** Apply the same one-day buffer to the briefing's own
+eligibility window instead of the fixed twenty-four hours, keep future and
+undated leads excluded, and add boundary tests that pin the exact edge.
+
+**Outcome:** `dateRejectionReason` in `briefing-collection.ts` now uses a named
+`FRESHNESS_WINDOW_DAYS = 2` constant in place of `86_400_000`. Stale fixtures in
+the collection tests moved to the new boundary, and a new test asserts that a
+lead exactly two days old is accepted, one second older is stale, and the stale
+lead's article page is never fetched. Documentation stating a 24-hour window was
+updated in `architecture.md`, `data-pipeline.md` (DISC-03 and the date-filter
+note), `implementation-plan.md`, and `README.md`.
+
+### Retained article text for chat, increment 4.4.10 (2026-09-20)
+
+**User question:** “For the UIDAI article, chat is unable to read article text or
+did not find much information. is it because the article text is not stored/present
+or LLM did not anything usefuk?”
+
+**User follow-up:** “What is the cost of storing the article text if we already
+have some limits on parsing?”
+
+**User decision:** “Yes let's store it in a side table and provide it to the chat
+in the conversation start. This is a conscious decision which can be relooked
+later and if needed move to tool calls which get the document text only if
+needed”
+
+**Material coding prompt:** Retain one bounded extract of each cited source in a
+side table written during publication, and supply it to the chat turn at
+conversation start with its retrieval time and tier. Keep the extraction ceiling,
+store nothing for uncited sources, fall back to the attributed description when
+there is no article body, disclose in the prompt that the extract is bounded and
+may differ from the live page, and state explicitly when an older briefing has no
+retained text. Cover retention, scoping, the cap, and the context rendering with
+tests, and update the storage, chat, backlog, README, and architecture notes.
+
+**Outcome:** Migration 9 adds `briefing_evidence`; `publishBriefing` copies the
+bounded extract inside its transaction before deleting temporary evidence;
+`readBriefingEvidence` serves the chat turn; `buildBriefingChatContext` renders
+labelled, capped extracts and the prompt policy version moved to `2026-09-20.2`.
+`npm run check` passes 185 tests. Verified live in the browser against run
+`2d4b7f5e`: the Qwen story's answer named the Interleave architecture and the
+`qwen3.8-livetranslate-flash-realtime` WebSocket endpoint, both absent from the
+stored summary — the UIDAI failure mode is fixed. Retention is recorded as a
+conscious, revisitable exception to storing citations and metadata only.
+
+### Chat composer keyboard shortcuts (2026-09-21)
+
+**User request:** “for chat screen, implement enter to submit questions, cmd+enter
+to go to a new line in chat”
+
+**Material coding prompt:** Make Enter send the chat question and Command/Ctrl
+plus Enter insert a newline, keeping the browser's own editing behavior for
+Shift+Enter and for an in-progress IME composition. Keep the decision in a plain
+testable module rather than inside the component, and make the shortcut
+discoverable in the UI.
+
+**Outcome:** Added `src/web/chat-composer.ts` with `composerKeyAction` (pure
+keydown classification: plain Enter → submit, Command/Ctrl+Enter → newline,
+everything else including composition → untouched) and `insertLineBreak`
+(caret-and-selection aware). `ChatScreen` wires it to the existing composer
+`onKeyDown` and states the shortcut beside the box. `npm run check` passes 190
+tests. Verified in the browser: ⌘Enter left `"First line\nsecond line"` in the
+box with the transcript unchanged, Shift+Enter added a third line without
+sending, and Enter submitted — the transcript grew from four to six messages with
+a source-attributed answer. While an answer streams the composer stays disabled,
+so Enter is ignored rather than queueing a second question.
+
+### Cloudflare hosting readiness and plan (2026-09-21)
+
+**User request:** “Let's start to plan to host current system to cloudflare and
+work on the daily trigger later. How ready is the current code for cloudflare
+hosting”
+
+**Material coding prompt:** Assess deployment readiness from the actual
+configuration and request path rather than by inspection alone: validate the
+Wrangler configuration and container image without publishing anything, identify
+what blocks hosting, and record a phased plan with acceptance criteria, keeping
+the daily trigger out of scope.
+
+**Outcome:** `npx wrangler deploy --dry-run --config wrangler.jsonc` validated the
+posture — container image built from the pinned Dockerfile, five client assets
+read, Worker bundled to 2.97 MB (582 KB gzip), and all four bindings resolved
+(`PERSONAL_BRIEFING`, `SEARXNG`, `BRIEFING_WORKFLOW`, `AI`). The same check found
+that the README's documented `npx wrangler deploy` cannot work: the Vite plugin
+redirects to `dist/<worker>/wrangler.json`, where the assets directory is
+rewritten relative but the container Dockerfile path is not, so it aborts on a
+missing `dist/…/infra/searxng/Dockerfile`. Recorded Increment 6 as a five-phase
+plan in `docs/implementation-plan.md` (deploy mechanics → Access protection →
+first deployment with hosted-IP engine measurement → cost/quality measurement →
+reliability guards), corrected the README deployment section, and flagged that no
+authentication exists (`localUserId` is hardcoded), so Access must precede the
+first hostname. No cloud resources were created and nothing was deployed.

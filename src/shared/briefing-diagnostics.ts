@@ -17,6 +17,7 @@ export const briefingQueryDiagnosticSchema = z.strictObject({
 export const briefingCandidateDiagnosticSchema = z.strictObject({
   queryIndex: z.number().int().min(0).max(59),
   sourceUrl: z.url().max(2_000),
+  discoveryUrl: z.url().max(2_000).optional(),
   title: z.string().max(500),
   publisher: z.string().max(500).nullable(),
   engines: z.array(z.string().min(1).max(120)).max(20).default([]),
@@ -38,6 +39,8 @@ export const briefingCandidateDiagnosticSchema = z.strictObject({
     'excluded',
     'candidate-budget',
     'evidence-budget',
+    'decode-budget',
+    'decode-failed',
     'article',
     'description',
     'headline-only',

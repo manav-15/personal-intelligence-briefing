@@ -24,6 +24,22 @@ export const chatMessageSchema = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 
+/**
+ * Bounded article text retained with one published item so a follow-up answer
+ * can consult it. This is the deliberate exception to storing citations and
+ * metadata only: it is capped at the extraction limit, read only by the chat
+ * turn, and deleted with its briefing.
+ */
+export const briefingEvidenceSchema = z.strictObject({
+  sourceUrl: z.url().max(2_000),
+  publisher: z.string().trim().min(1).max(500).nullable(),
+  evidenceTier: z.enum(['article', 'description', 'headline-only']),
+  retrievedAt: z.iso.datetime(),
+  characters: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  text: z.string().trim().min(1).max(12_000),
+});
+
 /** Browser input for starting a source-scoped conversation. */
 export const createChatSessionSchema = z.strictObject({
   briefingRunId: runId,
@@ -45,3 +61,5 @@ export const chatSessionMessagesSchema = z.strictObject({
 export type ChatSession = z.infer<typeof chatSessionSchema>;
 /** One durable conversation turn. */
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+/** Retained bounded article text for one published item source. */
+export type BriefingEvidence = z.infer<typeof briefingEvidenceSchema>;

@@ -77,7 +77,7 @@ async function resolveEvidence(
 
   if (articleUrl.hostname === 'news.google.com') {
     return unavailable(
-      'Google News requires an additional publisher-link decoder before article retrieval.',
+      'Google News returned another Google link instead of a publisher URL.',
     );
   }
 

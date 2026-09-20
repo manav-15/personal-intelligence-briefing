@@ -20,6 +20,9 @@ type SearxngResponse = z.infer<typeof responseSchema>;
 type SearchInput = z.output<typeof inspectionSearchSchema>;
 type DateFilter = { start: Date; end: Date } | null;
 
+/** Extra day added to every requested range filter. */
+const RANGE_BUFFER_DAYS = 1;
+
 /** Queries a configured SearXNG instance and preserves attributed search metadata. */
 export async function discoverSearxng(
   request: z.input<typeof inspectionSearchSchema>,
@@ -145,15 +148,21 @@ function presentSearchResults(
   };
 }
 
+/**
+ * Application-side window for each filter, widened by a buffer day: engine
+ * timestamps are rounded to the day and can lag the publisher, so a strict
+ * 1 day/1 month/1 year boundary drops results that belong to the range.
+ */
 function dateFilter(timeRange: SearchInput['timeRange']): DateFilter {
   if (timeRange === 'any') return null;
 
   const end = new Date();
   const days = { day: 1, month: 31, year: 365 };
+  const buffered = days[timeRange] + RANGE_BUFFER_DAYS;
 
   return {
     end,
-    start: new Date(end.getTime() - days[timeRange] * 86_400_000),
+    start: new Date(end.getTime() - buffered * 86_400_000),
   };
 }
 

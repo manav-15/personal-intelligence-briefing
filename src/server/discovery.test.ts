@@ -209,7 +209,7 @@ describe('bounded evidence retrieval', () => {
     ).resolves.toEqual({
       status: 'unavailable',
       reason:
-        'Google News requires an additional publisher-link decoder before article retrieval.',
+        'Google News returned another Google link instead of a publisher URL.',
     });
   });
 
