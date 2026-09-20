@@ -126,10 +126,20 @@ check.
 
 ### 5. Add the allow policy
 
-1. In the application, create a policy named for example `Owner`.
-2. **Action: Allow**, and add an **Include** rule of type **Emails** with your
-   address. Do not use a broad rule such as every address in a domain unless that
-   is genuinely intended — this is the only gate in front of the app.
+The policy decides which identity may sign in, and the dashboard offers two shapes:
+
+- **Cloudflare account members.** Works immediately with no domain and no identity
+  provider: the login is the Cloudflare account itself. Anyone you later add to the
+  account inherits access, so if that matters, pin the exact identity with the
+  `ACCESS_ALLOWED_IDENTITIES` binding — account membership alone then stops being
+  sufficient.
+- **An email domain.** Requires a domain added and verified in the account, so it is
+  not available for a `workers.dev`-only setup. Once a domain exists it is the better
+  long-term choice, covering every address at that domain without per-person edits.
+
+Either way: **Action: Allow**, and do not add a broader rule than you intend, because
+this is the only gate in front of the app. A service token, if you create one, needs
+its own **Include → Service Token** rule.
 
 ### 6. (Optional) Create a service token for scripted access
 

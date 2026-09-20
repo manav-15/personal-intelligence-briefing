@@ -367,6 +367,15 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Recorded repository-driven infrastructure as DEPLOY-04 at the
+  user's request, deferred to a later increment: a GitHub remote plus an Actions
+  workflow that gates on `npm run check` and deploys, with the Access application
+  and policy managed as code so the AUD tag is generated rather than copied.
+  Documented the two Access policy shapes in `docs/deployment.md` — Cloudflare
+  account members, which needs no domain and is available now, and an email
+  domain, which needs a verified domain added to the account — including the note
+  that `ACCESS_ALLOWED_IDENTITIES` keeps account membership from being sufficient
+  on its own. No code changed and nothing was deployed.
 - **2026-09-21:** First deployment, by user instruction. `npm run deploy` shipped
   version `2bdddc6b-a7a5-4ebb-9715-4c535e54af71` to
   `https://personal-intelligence-briefing.chiraniamanav15.workers.dev` on the
@@ -1245,6 +1254,16 @@ the BRIEF-01 same-day duplicate path; and STORE-01 retention/deletion including
 the unimplemented 90-day deduplication memory. _Acceptance:_ a scheduled-style
 repeated run cannot lose an edition to one contradictory model item and cannot
 republish an already-covered citation.
+
+### Deferred to a later increment
+
+**Repository-driven infrastructure (DEPLOY-04).** Deferred by user decision. When
+taken up: push the repository to a GitHub remote, add an Actions workflow that
+gates on `npm run check` and deploys with `npm run deploy`, and bring the Access
+application and policy under code (Terraform's `cloudflare_zero_trust_access_*`
+resources or the Access API) so the AUD tag becomes an output rather than a
+hand-copied value. One-time account actions — Zero Trust organisation, team
+domain, and login method — stay manual either way.
 
 ### Risks and open decisions
 

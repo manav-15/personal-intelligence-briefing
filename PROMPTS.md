@@ -1203,3 +1203,26 @@ the inspection route return 404 because their local bindings are absent;
 shell. The emitted client bundle was grepped for the team domain, account id,
 secret names, and account subdomain and contains none of them. Remaining work is
 the Access application and its `ACCESS_AUD` value.
+
+### Repository-driven infrastructure deferred; Access policy options (2026-09-21)
+
+**User request:** “Can we connect cloudflare config to github repo and maintain
+infra using github code?”
+
+**User decision:** “We will add this later - add this as TODO. I will enable access
+from dashboard - there are two options. 1 - cloudlflare accounr: members of my
+account can visit. 2. anyone with verifiable email from my domain”
+
+**Material coding prompt:** Record repository-driven deploys and infrastructure as a
+backlog item rather than starting it, and document the two Access policy shapes
+with what each requires so the choice can be made in the dashboard.
+
+**Outcome:** Added DEPLOY-04 (`Later`, `Planned`) covering a GitHub remote with an
+Actions workflow that gates on `npm run check` and deploys, plus Access
+application and policy as code so the AUD tag becomes an output; `wrangler.jsonc`
+already owns routes, bindings, Durable Objects, Workflows, and vars, and Wrangler
+has no Access command. `docs/deployment.md` now explains the policy choice:
+Cloudflare account members works immediately with no domain, and an email-domain
+policy needs a domain added and verified in the account, which a `workers.dev`-only
+setup does not have. Also noted that `ACCESS_ALLOWED_IDENTITIES` prevents account
+membership alone from granting access. No code changed and nothing was deployed.
