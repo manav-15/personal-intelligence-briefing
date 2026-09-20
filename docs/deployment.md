@@ -219,6 +219,18 @@ domain route.
 | Allowed identities | The email (and any service-token client ids) you authorised                          | Defence in depth beyond the Access policy                       |
 | Hostname           | `workers.dev` or the custom domain you chose                                         | Worker route and Access application                             |
 
+**Where each value is stored.** Non-secret values live in `wrangler.jsonc` under
+`vars` and are committed, so the deployed configuration stays reviewable in git:
+`ACCESS_TEAM_DOMAIN` is already there and `ACCESS_AUD` joins it. The AUD tag is an
+identifier, not a credential — it appears in every Access token and is visible in
+the dashboard, and knowing it grants nothing without a token Cloudflare actually
+signed. Nothing in this deployment needs a Worker secret: the container and its
+secret are gone, and Workers AI is reached through its binding.
+
+Prefer not to commit it? `npx wrangler secret put ACCESS_AUD` works identically,
+because the binding is just a string; the cost is that the value then lives outside
+the repository and is not visible in review.
+
 ## Current limitations
 
 - The app is single-user by design: every authenticated identity maps to one
