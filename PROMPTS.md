@@ -1365,3 +1365,15 @@ not Worker subrequests. Containers document outbound control by destination only
 no source-IP guarantee — so the SearXNG option is justified by returning publisher
 URLs directly, not by a distinct IP. Recorded both in DISC-10, with running the
 provider-facing piece on an owner-controlled IP added as an explicit option.
+
+### Engine reachability from Cloudflare measured (2026-09-21)
+
+**Material coding prompt:** Before recommending the paid container path, measure
+whether search engines answer Cloudflare's egress range at all.
+
+**Outcome:** From a probe Worker: DuckDuckGo HTML 200 with publisher links, Mojeek
+200 with result links, Bing 200 with no extractable result links, Startpage 200
+with none, Google 429 (the same block affecting the Google News decoder). The
+SearXNG path is therefore likely to work on Cloudflare without a dedicated IP if
+it uses DuckDuckGo and Mojeek and excludes Google; a Container's own egress was not
+measured and remains an unknown. Probe deleted, DISC-10 updated.

@@ -367,6 +367,14 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Measured engine reachability from Cloudflare's egress, because
+  that decides whether restoring SearXNG is worth the paid plan. DuckDuckGo's HTML
+  endpoint answered 200 with publisher links, Mojeek 200 with result links, Bing
+  and Startpage 200 without extractable result links, and Google 429 — the same
+  block that stops the Google News decoder. A containerised SearXNG should
+  therefore resolve publisher URLs through DuckDuckGo and Mojeek without needing a
+  dedicated IP, which Cloudflare only sells as an enterprise add-on. Recorded in
+  DISC-10; probe Workers deleted.
 - **2026-09-21:** Corrected a claim about container egress while answering whether
   the Worker can have its own IP. Cloudflare's documentation offers dedicated
   egress only as enterprise add-ons — Smart Shield's Dedicated CDN Egress IPs,
