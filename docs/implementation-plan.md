@@ -367,6 +367,17 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Measured the captcha-free alternative to scraping, after the owner
+  reported that SearXNG's Google engine reaches a captcha wall. Publisher RSS
+  answered 200 with direct publisher links and dates (BBC World 27 items, Guardian
+  World 45, Sky Sports Premier League 20) and the Hacker News Algolia API answered
+  200 with direct publisher URLs, while Reddit's JSON endpoint answered 403 and
+  GDELT stayed intermittent. Article retrieval from the same edge returned real
+  body text (BBC and Guardian at 600-1,041 words, Sky Sports news at 932), so a
+  feed-and-API channel would give both discovery and evidence without a container,
+  a paid plan, or any scraping. Recorded as DISC-11 with the choice it needs —
+  curated registry or per-topic configuration — and folded the measurements into
+  DISC-10. Probe Worker deleted.
 - **2026-09-21:** Measured engine reachability from Cloudflare's egress, because
   that decides whether restoring SearXNG is worth the paid plan. DuckDuckGo's HTML
   endpoint answered 200 with publisher links, Mojeek 200 with result links, Bing

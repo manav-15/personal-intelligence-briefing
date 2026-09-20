@@ -1377,3 +1377,22 @@ with none, Google 429 (the same block affecting the Google News decoder). The
 SearXNG path is therefore likely to work on Cloudflare without a dedicated IP if
 it uses DuckDuckGo and Mojeek and excludes Google; a Container's own egress was not
 measured and remains an unknown. Probe deleted, DISC-10 updated.
+
+### SearXNG's Google engine captchas; measured the captcha-free path (2026-09-21)
+
+**User statement (verbatim):** “searXNG google calls reach a captcha issue after
+some time.”
+
+**Material coding prompt:** Treat the owner's report as the constraint it is — any
+Google-scraping path fails on a server — and measure whether feeds and structured
+APIs can supply both discovery links and article text from Workers.
+
+**Outcome:** Measured from a probe Worker: publisher RSS answered 200 with direct
+publisher links and publication dates (BBC World 27 items, Guardian World 45, Sky
+Sports Premier League 20), the Hacker News Algolia API answered 200 with direct
+publisher URLs and dates, Reddit's JSON endpoint answered 403, Google Search and the
+Google News decoder answered 429, and article retrieval from the edge returned full
+paragraph text (BBC 1,041 and 1,010 words, Guardian 601 and 831, Sky Sports news
+932). Recorded DISC-11 for a feed-and-API discovery channel with the decision it
+needs (curated registry versus per-topic configuration), extended DISC-10 with the
+measurements, and deleted the probe.
