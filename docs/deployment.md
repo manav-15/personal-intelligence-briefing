@@ -6,14 +6,14 @@ is deliberately out of scope (see `docs/implementation-plan.md`, Increment 6).
 
 ## Readiness prerequisites
 
-| Requirement                                     | Why                                                                                           |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Cloudflare account with a **Workers Paid** plan | Containers and Workflows are paid-plan features; Durable Object SQLite usage is billed on top |
-| A zone you control in the same account          | Access applications bind to a `subdomain.zone` hostname                                       |
-| Zero Trust enabled (free tier)                  | Covers up to 50 seats; one user is free                                                       |
-| `npx wrangler login` completed                  | Non-interactive deploys can use a scoped API token instead                                    |
-| **Docker Desktop running**                      | `wrangler deploy` builds the SearXNG container image locally and pushes it during deploy      |
-| Node 24.x                                       | `npm run check` and the build                                                                 |
+| Requirement                                                                                                                     | Why                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Cloudflare account with a **Workers Paid** plan                                                                                 | Containers and Workflows are paid-plan features; Durable Object SQLite usage is billed on top |
+| A hostname — either the free `<worker>.<account>.workers.dev` address (no zone needed) or a custom domain in a zone you control | Access protects the hostname the app is served from                                           |
+| Zero Trust enabled (free tier)                                                                                                  | Covers up to 50 seats; one user is free                                                       |
+| `npx wrangler login` completed                                                                                                  | Non-interactive deploys can use a scoped API token instead                                    |
+| **Docker Desktop running**                                                                                                      | `wrangler deploy` builds the SearXNG container image locally and pushes it during deploy      |
+| Node 24.x                                                                                                                       | `npm run check` and the build                                                                 |
 
 ## Order of operations (and why)
 
@@ -22,7 +22,7 @@ Do the code work first, deploy second, and attach Access last:
 1. **Land the fail-closed auth code** (Increment 6, phase P2). Until Access exists
    every request is rejected — a Worker that refuses requests without a valid
    Access JWT cannot be abused even if someone finds the hostname.
-2. **Deploy** with a custom domain route.
+2. **Deploy** with a hostname: `workers.dev` or a custom domain route.
 3. **Create the Access application.** The app immediately starts issuing tokens,
    so the browser can then authenticate.
 
@@ -37,9 +37,23 @@ Record each value as you go; the last section lists what the code needs.
 
 ### 1. Choose the hostname
 
-Pick the hostname the app will live at, for example `briefing.example.com`. The
-whole hostname is protected, so static assets, `/api/*`, and `/agents/*` all sit
-behind Access.
+Two options; both are protected identically by Access, and switching later only
+means repointing the Access application and updating the AUD tag in the Worker
+configuration.
+
+**Option A — the free `workers.dev` address (no domain or zone required).**
+Register the account's `workers.dev` subdomain once, then the app lives at
+`<worker-name>.<account-subdomain>.workers.dev`. Set `workers_dev` to `true` in
+`wrangler.jsonc` (it is currently `false`, which is what keeps the Worker
+unreachable today) and leave `preview_urls` as `false`: preview URLs are a
+separate surface that is easy to forget, and if they are ever enabled they must
+be protected too.
+
+**Option B — a custom domain.** Add `briefing.example.com` as a custom domain
+route in `wrangler.jsonc`, which requires a zone in the same account.
+
+Whichever you choose, the whole hostname sits behind Access, so static assets,
+`/api/*`, and `/agents/*` are all covered.
 
 ### 2. Enable Zero Trust and set the team domain
 
@@ -59,6 +73,24 @@ behind Access.
 
 ### 4. Create the Access application
 
+**For a `workers.dev` hostname (Option A)** the shortest path is the Worker-level
+toggle, which creates and manages the Access application for you:
+
+1. **Workers & Pages → your Worker → Settings → Domains & Routes**, or the
+   **Access** tab on the Worker overview.
+2. Enable **Protect with Access** for **production** (Protection applies to
+   production traffic; leave previews alone because `preview_urls` is off).
+3. Choose the login method from step 3 and add the allow rule from step 5.
+4. Note the AUD tag from the application Access created — it appears under
+   **Zero Trust → Access controls → Applications**. It is still needed, because
+   the Worker verifies the token itself.
+
+Zero Trust also offers **Workers & Pages → Protect all Workers**, which applies a
+default policy to every Worker and preview URL in the account. That is convenient
+but broader than this app needs; protecting the single Worker is enough.
+
+**For a custom domain (Option B),** create it directly:
+
 1. **Access controls → Applications → Create new application → Self-hosted**.
 2. Name it, for example `Personal Briefing`.
 3. Set the public hostname to the subdomain and zone chosen in step 1.
@@ -68,7 +100,14 @@ behind Access.
    day is reasonable for a personal app.
 5. Leave the default of protecting all paths rather than scoping to `/api/*`.
 6. Save, then open the application's **Overview** and copy the
-   **Application Audience (AUD) Tag** — a 32-character value the Worker must check.
+   **Application Audience (AUD) Tag** — a 32-character value the Worker checks.
+
+Do not rely on `ctx.access.getIdentity()` for this Worker. Cloudflare exposes an
+Access identity to Worker code, but with **Static Assets** an internal router sits
+in front of the script and does not pass that context through, which is exactly
+this app's shape. The Worker therefore verifies the Access JWT itself, and
+`ctx.access` may be tested later as an optional fast path, never as the only
+check.
 
 ### 5. Add the allow policy
 
@@ -116,9 +155,10 @@ generated `dist/<worker>/wrangler.json`, where the assets directory is rewritten
 relative to that file but the container's Dockerfile path is not, so a plain
 `npx wrangler deploy` aborts on a missing `dist/…/infra/searxng/Dockerfile`.
 
-Add the hostname to `wrangler.jsonc` as a custom domain route before deploying,
-and do **not** set `SEARXNG_BASE_URL` in deployment — when present, the Worker
-uses it instead of the private container binding.
+Before deploying, settle the hostname in `wrangler.jsonc`: either set
+`workers_dev` to `true` for the free `workers.dev` address, or add the custom
+domain route. Do **not** set `SEARXNG_BASE_URL` in deployment — when present, the
+Worker uses it instead of the private container binding.
 
 ## Post-deploy verification
 

@@ -1116,3 +1116,24 @@ and the current limitations. The safe order of operations is documented as
 fail-closed auth code → deploy → attach Access, so no window exists in which the
 API is reachable and unauthenticated. No cloud resources were created and nothing
 was deployed.
+
+### workers.dev hostname and Cloudflare setup questions (2026-09-21)
+
+**User request:** “Do ineed to create aplication or project in cloudflare? for the
+domain, I will start with using cloudflare provided free DNS addresses”
+
+**Material coding prompt:** Confirm whether a Cloudflare project or application
+must be created by hand, establish whether the app can run on the free
+`workers.dev` address, and update the deployment runbook so it covers that path
+rather than assuming a custom domain.
+
+**Outcome:** No Worker project needs creating — `wrangler deploy` creates and
+updates the Worker from `wrangler.jsonc`. An Access application is required, and
+on `workers.dev` the Worker-level “Protect with Access” toggle creates it for
+you. Access does protect `workers.dev` hostnames, so no zone or custom domain is
+needed; the runbook now documents both paths, the `workers_dev: true` change
+`wrangler.jsonc` needs, and why `preview_urls` must stay false. Also verified and
+recorded that `ctx.access.getIdentity()` cannot be relied on here: with Static
+Assets an internal router sits in front of the script and does not pass that
+context through, so the Worker keeps its own JWT verification. No code changed and
+nothing was deployed.

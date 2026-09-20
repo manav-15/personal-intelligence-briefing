@@ -367,6 +367,19 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Recorded two hosting decisions from review. Hostname: start on
+  the free `workers.dev` address, which needs no zone, so Access is the only
+  account-level setup required; `workers_dev` flips to `true` and `preview_urls`
+  stays `false`. Access can protect a `workers.dev` host either through the
+  Worker-level "Protect with Access" toggle or a self-hosted application naming
+  that host, and either path still yields the AUD tag the Worker needs because
+  verification depends on the team domain and AUD rather than the hostname.
+  Identity API: `ctx.access.getIdentity()` exists, but with Static Assets an
+  internal router sits in front of the script and does not pass that context
+  through, so this Worker keeps its own JWT verification and treats the platform
+  identity as an optional post-deploy measurement, never the only check.
+  `docs/deployment.md` now covers both hostname paths. No code changed and nothing
+  was deployed.
 - **2026-09-21:** Confirmed Option A for access identity and wrote the deployment
   runbook. Option A keeps one application-level owner id with Access as the gate,
   superseding the earlier note about deriving the Durable Object key from the JWT
@@ -1090,6 +1103,26 @@ limitation.
 command steps, the safe order of operations (fail-closed code → deploy → Access
 application), the values the Worker configuration needs, and the post-deploy
 verification checklist.
+
+**Hostname — decided: start on `workers.dev`.** No zone or custom domain is
+needed; the account's free `workers.dev` subdomain is enough, and Access protects
+it the same way (either the Worker-level "Protect with Access" toggle, which
+creates the application, or a self-hosted application naming the workers.dev
+host). This requires flipping `workers_dev` to `true` in `wrangler.jsonc` — which
+is precisely what keeps the Worker unreachable today — while leaving
+`preview_urls` false, since preview URLs are a separate surface that is easy to
+leave unprotected. Moving to a custom domain later only repoints the Access
+application and updates the AUD tag, because verification depends on the team
+domain and AUD, not the hostname.
+
+**Do not depend on `ctx.access`.** Cloudflare exposes an Access identity to
+Worker code (`ctx.access.getIdentity()`) without JWT parsing, but with **Static
+Assets** an internal router sits in front of the script and does not pass that
+context through — and this Worker uses Static Assets with `run_worker_first` for
+`/api` and `/agents`. The Worker therefore verifies the Access JWT itself.
+`ctx.access` can be measured after the first deploy as an optional fast path, but
+never as the only check, and its absence must remain a rejection rather than a
+fallback.
 
 **Worker module (`src/server/access.ts`).** One deep entrypoint —
 `resolveAccessIdentity(env, request): { ok: true; userId } | { ok: false; status; message }`
