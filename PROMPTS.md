@@ -1070,3 +1070,26 @@ first deployment with hosted-IP engine measurement → cost/quality measurement 
 reliability guards), corrected the README deployment section, and flagged that no
 authentication exists (`localUserId` is hardcoded), so Access must precede the
 first hostname. No cloud resources were created and nothing was deployed.
+
+### Commit and Access auth plan (2026-09-21)
+
+**User request:** “commit the current changes - give plan for auth implementation
+and full readiness for cloudflare access”
+
+**Material coding prompt:** Commit the accumulated work, then specify the Cloudflare
+Access implementation in enough detail to build from: the exact JWT contract,
+where verification lives, how identity maps to the existing single-user Durable
+Object, what must fail closed, and how it is tested deterministically.
+
+**Outcome:** Committed as `3f35418` (27 files, +2,765/−280) covering the decoder,
+multi-channel collection, decode-outcome split, engine set, buffered ranges,
+freshness-first decoding, retained chat evidence, and the composer shortcuts; one
+commit because the collection changes are interleaved and no intermediate state
+passes `npm run check`. The auth plan was verified against Cloudflare's
+documentation and recorded as “P2 detail” under Increment 6, including the two
+details most easily got wrong — service-token JWTs have an empty `sub` (identity
+is `common_name`/`service_token_id`), and Access validates the WebSocket upgrade
+only — plus the fail-closed rules, JWKS rotation handling, an identity allowlist,
+and the deterministic test list. One decision is left for review: keep a single
+application-level owner id and treat Access as the gate, rather than deriving the
+Durable Object key from `sub`.

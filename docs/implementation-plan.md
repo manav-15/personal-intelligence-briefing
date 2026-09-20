@@ -367,6 +367,22 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Expanded the P2 hosting phase into a concrete Access
+  implementation plan (no code yet). Verified Cloudflare's contract against its
+  documentation: `Cf-Access-Jwt-Assertion` (case-insensitive, with the
+  `CF_Authorization` cookie for browsers), JWKS at
+  `https://<team-domain>.cloudflareaccess.com/cdn-cgi/access/certs`, exact issuer
+  match on the team domain, the application's AUD tag as audience, RS256 only,
+  and — the two details most likely to be got wrong — service-token JWTs carry an
+  **empty `sub`** with the identity in `common_name`/`service_token_id`, and
+  Access validates the WebSocket upgrade only, never mid-connection. Recorded the
+  module boundary (`resolveAccessIdentity`), fail-closed rules, JWKS rotation
+  handling, an identity allowlist as defence in depth, and a deterministic test
+  list using an in-process RSA keypair. Flagged one decision for review: keep one
+  application-level owner id and treat Access purely as the gate (recommended, and
+  supersedes the earlier "use the JWT `sub`" note) rather than deriving the
+  Durable Object key from `sub`, which is empty for service tokens and would start
+  hosted data from an empty database.
 - **2026-09-21:** Recorded the deployment plan as Increment 6 scope (hosting now,
   daily trigger later). `npx wrangler deploy --dry-run --config wrangler.jsonc`
   validated the deployment posture without publishing anything: the pinned
@@ -1018,14 +1034,76 @@ configuration that sets `SEARXNG_BASE_URL` so the container cannot be bypassed
 silently. _Acceptance:_ `npm run deploy --dry-run` succeeds and resolves all four
 bindings plus the container image; README documents the real command.
 
-**P2 — Access protection before exposure (DEPLOY-02).** Create the Access
-application and policy for the single permitted identity across `/`, `/api/*` and
-`/agents/*`, then validate `Cf-Access-Jwt-Assertion` in the Worker (signature via
-JWKS, audience, issuer, expiry) and map the JWT `sub` into the `UserId` used by
-every route and by `idFromName`. Keep the local placeholder only when the local
-diagnostic binding is enabled. _Acceptance:_ an unauthenticated request to any
-API or Agent route is rejected; a different identity cannot read or write the
-first user's data; local development still works without Access.
+**P2 — Access protection before exposure (DEPLOY-02).** Put an Access
+application, a single-identity policy, and cryptographic JWT verification in
+front of every route before a hostname exists. Full design below.
+_Acceptance:_ an unauthenticated API or Agent request is rejected; a token from a
+different Access application, an expired token, or a tampered signature is
+rejected; local development still works without Access; and a service token can
+drive scripted verification against the same stored data.
+
+### P2 detail — Access implementation
+
+**Contract to implement against** (Cloudflare's documented values):
+
+| Value                | Where it comes from                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| JWT header           | `Cf-Access-Jwt-Assertion`, case-insensitive; browsers also carry `CF_Authorization`                      |
+| JWKS                 | `https://<team-domain>.cloudflareaccess.com/cdn-cgi/access/certs`                                        |
+| Issuer               | `https://<team-domain>.cloudflareaccess.com` — the team domain, never the app URL                        |
+| Audience             | the Access application's AUD tag; `aud` arrives as an array                                              |
+| Algorithm            | RS256 only; never accept an algorithm named by the token                                                 |
+| User claims          | `sub` (IdP subject), `email`, `exp`, `iat`, `nbf`                                                        |
+| Service-token claims | `sub` is **empty**, identity is in `common_name` / `service_token_id`, plus `service_token_status: true` |
+
+**Identity mapping — decision needed.** A single-user product has two coherent
+options. _Option A (recommended):_ keep one application-level owner id
+(`PRIMARY_USER_ID`, defaulting to the existing `single-user`) and treat Access as
+the gate plus an allowlist, so the browser and a service token reach the same
+Durable Object and the current local data model is unchanged. _Option B:_ derive
+the id from `sub` as the earlier note in this plan suggested — but service tokens
+have no `sub`, and the first hosted login would begin from an empty database.
+Option A is simpler and avoids both problems; it supersedes that earlier note.
+
+**Worker module (`src/server/access.ts`).** One deep entrypoint —
+`resolveAccessIdentity(env, request): { ok: true; userId } | { ok: false; status; message }`
+— that owns token extraction (header, else `CF_Authorization` cookie), JWKS
+caching, signature and claim verification, and the allowlist check. Routes and
+the Agent consume only that result, so no handler parses a token itself.
+
+- **Fail closed.** When the Access bindings are configured, a missing, malformed,
+  expired, wrong-issuer, or wrong-audience token is a 401 and never a fallback.
+  The local `single-user` placeholder is returned only when the Access bindings
+  are _absent_ and the local diagnostic binding is exactly `true`.
+- **Key rotation.** Cache the JWKS in module scope with a TTL and refresh on an
+  unknown `kid`; never disable verification when the JWKS fetch fails — that is a
+  401, not an allow.
+- **Allowlist (defence in depth).** An `ACCESS_ALLOWED_IDENTITIES` binding
+  (comma-separated `sub` values and service-token client ids) means a
+  misconfigured Access policy cannot silently admit a second authenticated user.
+  Trade-off: two places to update when the identity changes.
+- **Service tokens** map to the same owner id, so scripted verification
+  (`npm run evaluate:briefing-run`, a hosted generate call) reads and writes the
+  same data the browser sees. Scripts send `CF-Access-Client-Id` and
+  `CF-Access-Client-Secret`.
+- **WebSockets.** Access validates the HTTP upgrade only and does not re-evaluate
+  mid-connection, so the Agent route must rely on the handshake check and on the
+  client reconnecting (the SDK already recovers). Set the Access session duration
+  deliberately rather than leaving the default.
+
+**Zero Trust setup (account-level, manual, once).** Enable Zero Trust, choose a
+team domain, add an identity provider (one-time PIN by email is enough for one
+user), create the self-hosted Access application for the single hostname, add an
+allow policy for that identity, and copy the application AUD tag and team domain
+into the Worker as configuration. Protect the whole hostname — assets, API, and
+Agent — rather than only `/api/*`.
+
+**Tests (deterministic, no network).** Generate an RSA keypair in-process, sign
+tokens, and inject a fake JWKS fetcher: valid token accepted; wrong `aud`; wrong
+`iss`; expired `exp`; tampered signature; `alg: none` and HS256 rejected; unknown
+`kid` triggers one refresh; JWKS outage fails closed; service-token claims map to
+the owner id; missing header without Access bindings falls back only under the
+local flag; every rejection path returns a bounded message and no stack.
 
 **P3 — First deployment (DEPLOY-01).** `wrangler secret put SEARXNG_SECRET`,
 deploy, and verify the container starts and answers through its binding. Then
