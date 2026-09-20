@@ -1327,3 +1327,25 @@ and drops the stale instruction to enable `PREFERENCES_DIAGNOSTICS_ENABLED`
 locally. Verified in a browser with the preferences response intercepted to the
 deployed shape, and re-checked the saved state (revision 3, "Saved topics", button
 enabled). UX-05 records the missing first-run adoption action.
+
+### Hosted run published nothing: provider throttling (2026-09-21)
+
+**User report (verbatim):** “No eligible evidence is available for composition.
+Previous editions are safe. … google-news: Google News publisher-link decoding
+stopped after reaching its budget. … decoder failed (HTTP 429).”
+
+**Material coding prompt:** Establish from evidence which stage produced the empty
+composition and whether the failure is code, configuration, or the hosting
+environment, before changing collection behaviour.
+
+**Outcome:** Composition refuses when no candidate is eligible, and a throwaway
+probe Worker proved the candidates were lost upstream. From Workers egress the
+Google News article GET answers 200 but the decoder POST answers 429 on every
+attempt with and without a browser user agent; retrieval through the Google link
+returns a 593 KB interstitial whose canonical and og:url are both news.google.com,
+so no publisher URL can be recovered without it; and GDELT answered 429 for two of
+three topic queries spaced six seconds apart while a single earlier query returned
+20 dated articles with publisher URLs. The environment, not the code, is the
+constraint, and the run correctly took the complete-failure path. Recorded DISC-10
+(`High`, `Decision needed`) covering the SearXNG-container versus free-plan
+trade-off; probe Worker deleted.

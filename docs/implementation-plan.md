@@ -367,6 +367,19 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Recorded why the first hosted generation published nothing. The
+  run started (so the deployment is configurable and the preference gate is
+  satisfied) and ended with the complete-failure path the specification asks for:
+  `No eligible evidence is available for composition.` with the prior edition
+  retained. Composition refuses at `candidates.length === 0`, and a probe Worker on
+  Cloudflare's edge shows why: the Google News decoder's `batchexecute` POST
+  answered HTTP 429 on every attempt regardless of user agent, its interstitial
+  page exposes no publisher URL, and GDELT answered 429 for two of three topic
+  queries even spaced six seconds apart, though one earlier query returned 20
+  dated articles whose URLs were publishers. Both blockers are properties of
+  Workers' shared egress, not of the code, and the collection reported them rather
+  than padding the edition. Recorded as DISC-10 with the decision it needs; the
+  probe Worker was deleted after use.
 - **2026-09-21:** Fixed a first-run trap the hosted app exposed. A new deployment
   shows the suggested topics while none are stored, and the UI labelled that list
   "Saved topics" with the status line reading "Using initial defaults", so the
