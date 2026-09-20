@@ -367,6 +367,20 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Confirmed Option A for access identity and wrote the deployment
+  runbook. Option A keeps one application-level owner id with Access as the gate,
+  superseding the earlier note about deriving the Durable Object key from the JWT
+  `sub`; per-user agents and storage were recorded as future scope under the new
+  DEPLOY-03 backlog item, with `resolveAccessIdentity` and `idFromName` named as
+  the seams that change. `docs/deployment.md` now carries the prerequisites
+  (Workers Paid, a zone, Zero Trust, Docker for the image build), the manual
+  dashboard steps (team domain, login method, application, AUD tag, allow policy,
+  optional service token), the command steps, the post-deploy verification
+  checklist, and the values the Worker configuration needs. The safe order of
+  operations is recorded explicitly: land the fail-closed auth code, deploy, then
+  attach Access, so there is no window in which the API is reachable and
+  unauthenticated. No cloud resources were created, nothing was deployed, and no
+  code changed.
 - **2026-09-21:** Expanded the P2 hosting phase into a concrete Access
   implementation plan (no code yet). Verified Cloudflare's contract against its
   documentation: `Cf-Access-Jwt-Assertion` (case-insensitive, with the
@@ -1056,14 +1070,26 @@ drive scripted verification against the same stored data.
 | User claims          | `sub` (IdP subject), `email`, `exp`, `iat`, `nbf`                                                        |
 | Service-token claims | `sub` is **empty**, identity is in `common_name` / `service_token_id`, plus `service_token_status: true` |
 
-**Identity mapping — decision needed.** A single-user product has two coherent
-options. _Option A (recommended):_ keep one application-level owner id
+**Identity mapping — decided: Option A.** Keep one application-level owner id
 (`PRIMARY_USER_ID`, defaulting to the existing `single-user`) and treat Access as
 the gate plus an allowlist, so the browser and a service token reach the same
-Durable Object and the current local data model is unchanged. _Option B:_ derive
-the id from `sub` as the earlier note in this plan suggested — but service tokens
-have no `sub`, and the first hosted login would begin from an empty database.
-Option A is simpler and avoids both problems; it supersedes that earlier note.
+Durable Object and the current local data model is unchanged. This supersedes the
+earlier note that intended to derive the id from the JWT `sub`: service tokens
+carry an empty `sub`, and a `sub`-derived key would have started hosted data from
+an empty database.
+
+**Future scope — per-user identity (DEPLOY-03).** The user recorded that the
+longer-term direction is one Agent and isolated storage per authenticated user.
+Option A is therefore deliberately a single-user gate, not a multi-user design:
+the identity seam (`resolveAccessIdentity`) is the place that changes, and
+`idFromName` becomes identity-keyed, but nothing else in this plan presumes a
+single owner can never become many. `docs/deployment.md` records the same
+limitation.
+
+**Deployment runbook.** `docs/deployment.md` carries the ordered dashboard and
+command steps, the safe order of operations (fail-closed code → deploy → Access
+application), the values the Worker configuration needs, and the post-deploy
+verification checklist.
 
 **Worker module (`src/server/access.ts`).** One deep entrypoint —
 `resolveAccessIdentity(env, request): { ok: true; userId } | { ok: false; status; message }`

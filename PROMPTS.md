@@ -1093,3 +1093,26 @@ only — plus the fail-closed rules, JWKS rotation handling, an identity allowli
 and the deterministic test list. One decision is left for review: keep a single
 application-level owner id and treat Access as the gate, rather than deriving the
 Durable Object key from `sub`.
+
+### Access identity decision and deployment runbook (2026-09-21)
+
+**User request:** “Okay we can do option A, but note future scope is to move to per
+userID and per user agent and storage. Give me the steps for cloudflare manual
+steps”
+
+**Material coding prompt:** Record Option A as the decided identity model, capture
+per-user identity, agents, and storage as future scope with its own backlog item,
+and write the ordered Cloudflare dashboard steps needed to stand up Access,
+including which values the Worker configuration needs and how to verify the result
+without exposing the API.
+
+**Outcome:** Option A confirmed and recorded, superseding the earlier
+`sub`-derived note; the per-user direction became backlog item DEPLOY-03 with
+`resolveAccessIdentity` and `idFromName` named as the seams that will change.
+Added `docs/deployment.md`: prerequisites (Workers Paid, a zone, Zero Trust,
+Docker for the container image build), the manual dashboard steps with the exact
+values to copy back, the command steps, the post-deploy verification checklist,
+and the current limitations. The safe order of operations is documented as
+fail-closed auth code → deploy → attach Access, so no window exists in which the
+API is reachable and unauthenticated. No cloud resources were created and nothing
+was deployed.

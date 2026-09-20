@@ -196,9 +196,9 @@ inspect search and article evidence.
 
 Nothing is exposed by default (`workers_dev` and `preview_urls` are false), and
 the API has no authentication yet, so **Access protection must be configured
-before the first hostname is added**. See the hosting plan in
-[`docs/implementation-plan.md`](docs/implementation-plan.md) for the phased
-increment.
+before the first hostname is added**. The ordered dashboard and command steps
+are in [the deployment guide](docs/deployment.md); the phased increment is in
+[`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## Evidence limitations and planned improvements
 
