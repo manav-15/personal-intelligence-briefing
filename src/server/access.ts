@@ -64,8 +64,8 @@ export async function resolveAccessIdentity(
   request: Request,
   fetcher: Fetcher = fetch,
 ): Promise<AccessIdentity> {
-  const teamDomain = bindings.ACCESS_TEAM_DOMAIN?.trim();
-  const audience = bindings.ACCESS_AUD?.trim();
+  const teamDomain = configuredValue(bindings.ACCESS_TEAM_DOMAIN);
+  const audience = configuredValue(bindings.ACCESS_AUD);
   const userId = bindings.PRIMARY_USER_ID?.trim() || defaultUserId;
 
   if (teamDomain !== undefined && audience !== undefined) {
@@ -321,7 +321,22 @@ async function importKey(
   }
 }
 
-/** Reads the configured allowlist, or null when the Access policy is the gate. */
+/**
+ * Reads one optional binding, treating an empty value as absent.
+ *
+ * Local development blanks the Access bindings in the gitignored `.dev.vars`, so
+ * the Worker falls back to the local owner; only a non-empty value turns the
+ * Access verifier on.
+ */
+function configuredValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+
+  return trimmed === undefined || trimmed === '' ? undefined : trimmed;
+}
+
+/**
+ * Reads the configured allowlist, or null when the Access policy is the gate.
+ */
 function allowedIdentities(value: string | undefined): string[] | null {
   const entries = (value ?? '')
     .split(',')

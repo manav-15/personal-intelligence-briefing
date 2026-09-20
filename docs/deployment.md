@@ -239,6 +239,25 @@ Prefer not to commit it? `npx wrangler secret put ACCESS_AUD` works identically,
 because the binding is just a string; the cost is that the value then lives outside
 the repository and is not visible in review.
 
+## Local development once Access is on
+
+Two things differ from a plain Workers project, both because the deployment is
+Access-protected:
+
+- **`cloudflared` is required.** The remote-binding session that `ai.remote` needs
+  reaches the deployed Worker, and Access sits in front of it, so Wrangler refuses
+  to start without the tunnel binary: `brew install cloudflared`. No background
+  service is needed; Wrangler invokes the binary itself.
+- **`.dev.vars` blanks the Access bindings.** The committed `ACCESS_TEAM_DOMAIN`
+  and `ACCESS_AUD` would otherwise apply to the local Worker too, and every request
+  would fail closed with `Sign in through Cloudflare Access to use this app.`
+  Setting both to an empty value disables Access locally, so requests resolve to
+  the local owner under `PREFERENCES_DIAGNOSTICS_ENABLED`. An empty binding counts
+  as unconfigured, which is deliberate.
+
+The local Worker keeps serving the local `single-user` owner; only production
+requires a token.
+
 ## Current limitations
 
 - The app is single-user by design: every authenticated identity maps to one

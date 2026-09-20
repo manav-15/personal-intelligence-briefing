@@ -300,6 +300,23 @@ describe('cloudflare access identity', () => {
     ).resolves.toMatchObject({ ok: false, status: 401 });
   });
 
+  it('treats empty Access values as unconfigured, keeping local development working', async () => {
+    await expect(
+      resolveAccessIdentity(
+        {
+          ACCESS_TEAM_DOMAIN: '',
+          ACCESS_AUD: '   ',
+          PREFERENCES_DIAGNOSTICS_ENABLED: 'true',
+        },
+        requestWith(),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      source: 'local',
+      userId: 'single-user',
+    });
+  });
+
   it('requires Access when it is configured, even with the local flag set', async () => {
     const signing = await signingKey('kid-1');
     const { fetcher } = jwksFetcher([[signing]]);

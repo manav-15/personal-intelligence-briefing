@@ -367,6 +367,21 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Restored local development, which Access protection had broken
+  in two ways. `npm run dev` could not start at all: the remote-binding session
+  that `ai.remote` requires reaches the deployed Worker and therefore wanted
+  `cloudflared`, so that binary is now installed (2026.9.1, no background
+  service). With it running, the local API then answered 401 `Sign in through
+Cloudflare Access to use this app.` — the committed Access values applied to the
+  local Worker — so `.dev.vars` (gitignored) blanks both bindings and
+  `configuredValue` treats an empty value as unconfigured, which is the mechanism
+  that makes the blanking work; a test pins it. Verified locally in a real
+  browser: the app renders Today with a stored edition and `/api/briefings/today`
+  returns 200. Recorded BRIEF-05 from the same session: a model decision naming a
+  presentation topic outside its own candidates throws
+  `Presentation topic does not match selected candidates.` and loses the whole
+  edition, the same whole-run failure mode as BRIEF-04 but from a different guard.
+  DEV-01 is complete.
 - **2026-09-21:** Access went live on the hosted Worker, and the first signed-in
   request exposed a runtime-only defect. The application and policy are configured
   in Zero Trust, the AUD tag joined `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc`

@@ -1270,3 +1270,21 @@ post-fix), and added a token-free denial log so `wrangler tail` names the failin
 branch — which is what made the diagnosis possible. Probes deleted after use.
 Follow-ups recorded as DEV-01 (local dev needs `cloudflared` while the deployment
 is Access-protected) and EVAL-02 (no workerd coverage in the suite).
+
+### Restoring local development behind Access (2026-09-21)
+
+**User decision:** “option 1” — install `cloudflared` to unblock local development.
+
+**Outcome:** Installed cloudflared 2026.9.1 through Homebrew, without enabling its
+background service, which let `npm run dev` start again. That exposed a second
+blocker the same decision had introduced: the committed Access bindings applied to
+the local Worker, so every local request failed closed with a 401. Local
+development now blanks `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in the gitignored
+`.dev.vars`, and `resolveAccessIdentity` treats an empty binding as unconfigured
+rather than as a configured-but-empty audience — the change that makes blanking
+meaningful, covered by a new test. Also killed a stray `vite` dev server from an
+earlier session that was holding port 5173 and writing the same Worker state.
+Verified in a real browser: the local app renders Today with a stored edition, and
+`/api/briefings/today` and `/api/preferences` return 200. Recorded BRIEF-05 after
+observing a local run fail with `Presentation topic does not match selected
+candidates.`, which aborts the edition instead of dropping the offending item.
