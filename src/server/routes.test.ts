@@ -8,10 +8,13 @@ import {
   type Briefing,
   type BriefingArchiveEntry,
 } from '../shared/briefings';
+import { jwksFetcher, signedToken, signingKey } from '../test/access-tokens';
 import app from './index';
 import type { PersonalBriefingAgent } from './preferences-agent';
 
 const origin = 'https://briefing.test';
+const teamDomain = 'briefing-agent.cloudflareaccess.com';
+const audience = 'a'.repeat(32);
 const readPreferences = vi.fn(() => ({ configured: false as const }));
 const replacePreferences = vi.fn(() => ({
   ok: true as const,
@@ -366,16 +369,10 @@ describe('HTTP policy compatibility', () => {
   });
 
   it.each([
-    ['/api/preferences', 'Preference diagnostics are disabled.', null],
-    [
-      '/api/preferences/proposals',
-      'Preference diagnostics are disabled.',
-      null,
-    ],
     ['/api/inspection/search', 'Local inspection is disabled.', 'no-store'],
     ['/api/inspection/missing', 'Local inspection is disabled.', 'no-store'],
   ])(
-    'checks diagnostic enablement first for %s',
+    'keeps local inspection behind its own flag for %s',
     async (path, error, cache) => {
       const response = await app.fetch(
         new Request(origin + path, {
@@ -396,12 +393,66 @@ describe('HTTP policy compatibility', () => {
         method: 'OPTIONS',
         headers: { Origin: 'https://other.test' },
       }),
-      { PREFERENCES_DIAGNOSTICS_ENABLED: 'true' },
+      {},
     );
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
       error: 'Personal Briefing Agent is not configured.',
+    });
+  });
+
+  it('serves preferences for a verified identity with diagnostics disabled', async () => {
+    const signing = await signingKey('kid-1');
+    const keys = jwksFetcher([[signing]]);
+
+    vi.stubGlobal('fetch', keys.fetcher);
+
+    const deployed = {
+      ...env,
+      PREFERENCES_DIAGNOSTICS_ENABLED: undefined,
+      ACCESS_TEAM_DOMAIN: teamDomain,
+      ACCESS_AUD: audience,
+    };
+    const token = await signedToken(signing, {
+      aud: [audience],
+      iss: `https://${teamDomain}`,
+      sub: 'idp-subject-1',
+      email: 'owner@example.com',
+    });
+    const headers = {
+      'cf-access-jwt-assertion': token,
+      Origin: origin,
+    };
+
+    const preferences = await app.fetch(
+      new Request(`${origin}/api/preferences`, { headers }),
+      deployed,
+    );
+
+    expect(preferences.status).toBe(200);
+    expect(readPreferences).toHaveBeenCalled();
+
+    // Authentication still gates the same routes without a token.
+    const anonymous = await app.fetch(
+      new Request(`${origin}/api/preferences`, { headers: { Origin: origin } }),
+      deployed,
+    );
+
+    expect(anonymous.status).toBe(401);
+
+    // The diagnostic route stays behind its flag in the same configuration.
+    const diagnostics = await app.fetch(
+      new Request(
+        `${origin}/api/briefings/runs/${exampleBriefing.runId}/diagnostics`,
+        { headers },
+      ),
+      deployed,
+    );
+
+    expect(diagnostics.status).toBe(404);
+    expect(await diagnostics.json()).toEqual({
+      error: 'Briefing diagnostics are disabled.',
     });
   });
 

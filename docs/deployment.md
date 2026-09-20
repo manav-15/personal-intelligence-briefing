@@ -208,8 +208,9 @@ domain route.
 2. A browser visit shows the Access login, and after signing in the app loads.
 3. The chat screen answers a follow-up — this proves the WebSocket route works
    with Access and the retained evidence is present.
-4. `/api/inspection` and the preferences diagnostic return 404 in deployment;
-   both are local-only bindings.
+4. `/api/inspection` returns 404 in deployment; it is a local-only binding. The
+   preferences routes are not diagnostics and must serve the signed-in owner —
+   that is what makes the deployment configurable.
 5. One manual generation publishes an edition and its duration is recorded. With
    no container there is no cold start to pay, so this measures only search,
    article retrieval, and the model call.

@@ -17,10 +17,11 @@ topic proposals, and the foundation for immutable briefing publication records.
 Today and Archive currently read those publication records and show an empty
 state until manual briefing generation is added. The Topics screen can ask Llama
 3.3 70B to propose one new or edited topic; the user reviews a before/after card
-and explicitly applies or discards it. The local-only `/api/preferences` and
-`/api/briefings` diagnostics need
-`PREFERENCES_DIAGNOSTICS_ENABLED=true`; it is not a production settings API and
-remains disabled unless explicitly configured.
+and explicitly applies or discards it. The owner-scoped `/api/preferences` routes
+— reads, saves, and topic proposals — are ordinary application routes gated by
+authentication and origin, so a deployment can be configured and can run its
+first generation. Only `/api/briefings/runs/:runId/diagnostics` needs
+`PREFERENCES_DIAGNOSTICS_ENABLED=true` and stays local-only.
 
 With the local diagnostic enabled, Topics supports add, edit, pause, resume,
 and delete. Memory & settings saves global schedule, reading budget, summary,

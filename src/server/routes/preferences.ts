@@ -7,7 +7,6 @@ import {
 } from '../../shared/preferences';
 import {
   allowMethods,
-  diagnosticEnabled,
   noStore,
   requireIdentity,
   sameOrigin,
@@ -28,15 +27,14 @@ const proposalActionSchema = z.strictObject({
 });
 const proposalIdSchema = z.uuid();
 
-/** Local preference diagnostics backed by validated Agent RPC methods. */
+/**
+ * Owner-scoped preference reads, saves, and topic proposals.
+ *
+ * These are ordinary application routes, not diagnostics: they are what makes a
+ * deployment configurable, so they are gated by authentication and origin only.
+ * The diagnostic flag stays on the run-diagnostics and inspection routes.
+ */
 export const preferencesRoutes = new Hono<PreferencesHttpEnv>();
-preferencesRoutes.use(
-  '*',
-  diagnosticEnabled(
-    'PREFERENCES_DIAGNOSTICS_ENABLED',
-    'Preference diagnostics are disabled.',
-  ),
-);
 preferencesRoutes.use('*', async (c, next) => {
   if (c.env.PERSONAL_BRIEFING === undefined)
     return c.json({ error: 'Personal Briefing Agent is not configured.' }, 503);

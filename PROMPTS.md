@@ -1288,3 +1288,23 @@ Verified in a real browser: the local app renders Today with a stored edition, a
 `/api/briefings/today` and `/api/preferences` return 200. Recorded BRIEF-05 after
 observing a local run fail with `Presentation topic does not match selected
 candidates.`, which aborts the edition instead of dropping the offending item.
+
+### Preferences are production routes, not diagnostics (2026-09-21)
+
+**User request (verbatim):** “Production settings are unavailable: normal
+preferences routes require the diagnostic flag, so disabling diagnostics prevents
+configuration and first-run generation.Remove diagnostic gating from normal
+preferences reads, saves, and topic proposals. Keep authentication and existing
+input/origin checks.”
+
+**Outcome:** Removed the group-level `diagnosticEnabled('PREFERENCES_DIAGNOSTICS_ENABLED')`
+middleware from `preferencesRoutes`, so `GET`/`PUT /api/preferences`,
+`GET`/`POST /api/preferences/proposals`, and `PUT /api/preferences/proposals/:id`
+are gated by the missing-binding 503, `requireIdentity`, same-origin, and method
+checks alone. The flag continues to gate the run-diagnostics route and local
+inspection. Tests now cover the deployed shape (Access on, flag absent): the
+preferences read returns 200 for a verified token, 401 without one, and run
+diagnostics still 404 — verified to fail with the gate restored. Extracted the RSA
+token fixtures into `src/test/access-tokens.ts` and reused them in the router
+tests. Corrected the now-false claims in `README.md`, the plan, and the deployment
+checklist that preferences were a local-only diagnostic surface.

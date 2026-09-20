@@ -367,6 +367,18 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Made the deployment configurable. The preferences route group
+  applied `diagnosticEnabled('PREFERENCES_DIAGNOSTICS_ENABLED')` to `'*'`, so with
+  diagnostics disabled — the deployment's configuration — reads, saves, and topic
+  proposals all answered 404 and neither settings nor a first generation were
+  reachable. Preference access is ordinary application behaviour, so the group gate
+  is removed while authentication, the missing-binding 503, same-origin, and method
+  checks are unchanged; the flag now guards only the run-diagnostics route and
+  local inspection. Tests encode the deployed configuration directly — Access
+  configured, flag absent, valid token served, anonymous still 401, run diagnostics
+  still 404 — and the token fixtures moved to `src/test/access-tokens.ts` so the
+  router tests can reuse them. Recorded because the earlier "not a production
+  settings API" statements in `README.md` and the plan were wrong.
 - **2026-09-21:** Restored local development, which Access protection had broken
   in two ways. `npm run dev` could not start at all: the remote-binding session
   that `ai.remote` requires reaches the deployed Worker and therefore wanted
@@ -1132,9 +1144,12 @@ remain for local Docker verification, the Workflow opts in only when
 with its Durable Object binding and secret. Re-enabling the hosted path means
 restoring that binding and the paid plan.
 
-Runtime paths remain environment-aware: both diagnostic surfaces
-(`INSPECTION_ENABLED`, `PREFERENCES_DIAGNOSTICS_ENABLED`) return 404 unless their
-binding is exactly `true`, so neither ships enabled.
+Runtime paths remain environment-aware: the diagnostic surfaces — local
+inspection (`INSPECTION_ENABLED`) and run diagnostics
+(`PREFERENCES_DIAGNOSTICS_ENABLED`) — return 404 unless their binding is exactly
+`true`, so neither ships enabled. The preferences routes are not among them:
+reads, saves, and topic proposals are gated by authentication and origin only,
+because a deployment that cannot be configured cannot run at all.
 
 Remaining gaps before a hosted deployment:
 
