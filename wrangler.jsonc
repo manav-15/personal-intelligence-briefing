@@ -8,9 +8,12 @@
   // so there is no second, easily-forgotten surface to protect.
   "workers_dev": true,
   "preview_urls": false,
-  // Access verifies every request. ACCESS_AUD is added once the Access
-  // application exists; until then the Worker refuses all requests.
-  "vars": { "ACCESS_TEAM_DOMAIN": "briefing-agent.cloudflareaccess.com" },
+  // Access verifies every request: the team domain supplies the signing keys and
+  // ACCESS_AUD pins the one application whose tokens are accepted.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "briefing-agent.cloudflareaccess.com",
+    "ACCESS_AUD": "e55b9f5ad794088a501d7cc3c87dea053e21b60d615fcfdb31f57cc7e32f608f",
+  },
   "ai": { "binding": "AI", "remote": true },
   "workflows": [
     {
