@@ -1183,3 +1183,23 @@ two Access routes with the AUD tag as the value that completes the wiring.
 `npm run deploy:dry-run` validates in about four seconds with three bindings,
 no container image, and no Docker. `npm run check` passes 202 tests. Nothing was
 deployed.
+
+### First deployment (2026-09-21)
+
+**User request:** “deploy”
+
+**Material coding prompt:** Ship the Worker with the validated command, then
+verify from the outside that the fail-closed behaviour holds and that nothing
+sensitive is publicly readable while Access is still being configured.
+
+**Outcome:** Deployed version `2bdddc6b-a7a5-4ebb-9715-4c535e54af71` to
+`https://personal-intelligence-briefing.chiraniamanav15.workers.dev` on the
+Workers Free plan — Durable Object export created, `briefing-workflow` Workflow
+provisioned, 66 ms startup, no container image and no Docker. Live checks:
+`/api/briefings/today`, `/api/chats`, and the Agent route return 401
+("Authentication is not configured for this deployment"); `/api/preferences` and
+the inspection route return 404 because their local bindings are absent;
+`/api/health` answers 200 as the public health check; `/` serves only the app
+shell. The emitted client bundle was grepped for the team domain, account id,
+secret names, and account subdomain and contains none of them. Remaining work is
+the Access application and its `ACCESS_AUD` value.

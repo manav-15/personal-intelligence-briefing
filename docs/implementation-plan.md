@@ -367,6 +367,20 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** First deployment, by user instruction. `npm run deploy` shipped
+  version `2bdddc6b-a7a5-4ebb-9715-4c535e54af71` to
+  `https://personal-intelligence-briefing.chiraniamanav15.workers.dev` on the
+  Workers **Free** plan: the Durable Object export was created, the
+  `briefing-workflow` Workflow was provisioned, and Worker startup measured 66 ms
+  with no container image. Verified live: `/api/briefings/today`, `/api/chats`,
+  and `/agents/personal-briefing/single-user` all return 401 ("Authentication is
+  not configured for this deployment"), `/api/preferences` and the inspection
+  route return 404 because their local bindings are absent, `/api/health` answers
+  200 as the documented public health check, and `/` serves only the 515-byte app
+  shell. The emitted client bundle was checked for the team domain, the account
+  id, the secret names, and the account subdomain: absent, so nothing sensitive is
+  public while Access is still being set up. Remaining: the Access application,
+  its AUD tag, and `ACCESS_AUD`.
 - **2026-09-21:** Prepared the deployment so it is one command, after review
   found that Access cannot admit anything until an application exists — and an
   application cannot be scoped to a Worker that has not been deployed. Added

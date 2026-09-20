@@ -164,12 +164,13 @@ endpoint without changing Worker code or local application data.
 
 ## Deployment
 
-The Worker is ready to host on the Workers **Free** plan. It stores preferences,
-briefings, chat, and retained evidence in Durable Object SQLite, generates
-through a Workflow, and deploys no container: SearXNG is off, so discovery runs
-the decoded Google News RSS channel plus GDELT. `infra/searxng/` remains for
-local Docker verification through `SEARXNG_BASE_URL`; re-enabling the hosted
-SearXNG path means restoring the container binding and the paid plan.
+The Worker is deployed on the Workers **Free** plan at
+`https://personal-intelligence-briefing.chiraniamanav15.workers.dev`. It stores
+preferences, briefings, chat, and retained evidence in Durable Object SQLite,
+generates through a Workflow, and deploys no container: SearXNG is off, so
+discovery runs the decoded Google News RSS channel plus GDELT. `infra/searxng/`
+remains for local Docker verification through `SEARXNG_BASE_URL`; re-enabling the
+hosted SearXNG path means restoring the container binding and the paid plan.
 
 Every API and Agent request must carry a valid Cloudflare Access JWT. The Worker
 verifies it itself (RS256 against the team's JWKS, with the issuer, audience, and
@@ -181,19 +182,20 @@ exists.
 Deploy with the repository configuration, validating first:
 
 ```sh
-npm run build
-npx wrangler deploy --dry-run --config wrangler.jsonc
-npx wrangler deploy --config wrangler.jsonc
+npm run deploy:dry-run
+npm run deploy
 ```
 
-`--config wrangler.jsonc` is required: the Vite plugin redirects Wrangler to a
-generated `dist/<worker>/wrangler.json` whose relative paths do not all resolve,
-so a plain `npx wrangler deploy` fails. Set `workers_dev` to `true` for the free
-`workers.dev` address (or add a custom domain route) at deploy time.
+`npm run deploy` wraps the build plus `wrangler deploy --config wrangler.jsonc`;
+that flag is required because the Vite plugin redirects Wrangler to a generated
+`dist/<worker>/wrangler.json` whose relative paths do not all resolve.
+`workers_dev` is `true` for the free `workers.dev` address and `preview_urls`
+stays `false`.
 
-Nothing is exposed by default: `workers_dev` and `preview_urls` are both false.
-The ordered dashboard and command steps, including the Access setup and the
-values each side needs, are in [the deployment guide](docs/deployment.md); the
+Until the Access application is wired up, the deployed URL serves the empty app
+shell and answers every API and Agent request with 401; nothing with user data is
+reachable. The ordered dashboard and command steps, including the Access setup and
+the values each side needs, are in [the deployment guide](docs/deployment.md); the
 phased increment is in [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## Evidence limitations and planned improvements
