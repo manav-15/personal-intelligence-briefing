@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { routeAgentRequest } from 'agents';
-import { resolveAccessIdentity } from './access';
+import { resolveAccessIdentity, logAccessDenial } from './access';
 import { chatsRoutes } from './routes/chats';
 import { feasibilityRoutes } from './routes/feasibility';
 import { briefingsRoutes } from './routes/briefings';
@@ -25,7 +25,11 @@ app.route('/api/feasibility', feasibilityRoutes);
 app.all('/agents/*', async (c) => {
   const identity = await resolveAccessIdentity(c.env, c.req.raw);
 
-  if (!identity.ok) return c.json({ error: identity.message }, identity.status);
+  if (!identity.ok) {
+    logAccessDenial(identity.message, c.req.raw);
+
+    return c.json({ error: identity.message }, identity.status);
+  }
 
   // A client names the instance in the path; it may only address its own owner.
   const segments = new URL(c.req.url).pathname.split('/').filter(Boolean);

@@ -1,5 +1,9 @@
 import type { MiddlewareHandler } from 'hono';
-import { resolveAccessIdentity, type AccessBindings } from '../access';
+import {
+  resolveAccessIdentity,
+  logAccessDenial,
+  type AccessBindings,
+} from '../access';
 import type { PreferencesAgentEnv } from '../preferences-agent';
 import type { BriefingWorkflowParams } from '../briefing-workflow';
 
@@ -25,7 +29,11 @@ export type HttpEnv = {
 export const requireIdentity: MiddlewareHandler<HttpEnv> = async (c, next) => {
   const identity = await resolveAccessIdentity(c.env, c.req.raw);
 
-  if (!identity.ok) return c.json({ error: identity.message }, identity.status);
+  if (!identity.ok) {
+    logAccessDenial(identity.message, c.req.raw);
+
+    return c.json({ error: identity.message }, identity.status);
+  }
 
   c.set('userId', identity.userId);
   await next();

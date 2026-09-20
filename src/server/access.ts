@@ -367,6 +367,18 @@ function decodeBytes(segment: string): Uint8Array | null {
   }
 }
 
+/**
+ * Records one refused request so `wrangler tail` can name the failing check.
+ *
+ * The reason and the route are logged; the token, cookie, and any claim are not,
+ * because a denial is exactly when that material is least trustworthy.
+ */
+export function logAccessDenial(message: string, request: Request): void {
+  const { pathname } = new URL(request.url);
+
+  console.warn(`access denied: ${message} [${request.method} ${pathname}]`);
+}
+
 /** Clears the memoized Access keys; tests use it to isolate cases. */
 export function resetAccessKeyCache(): void {
   jwksCache.clear();
