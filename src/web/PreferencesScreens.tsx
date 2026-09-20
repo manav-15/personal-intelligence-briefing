@@ -158,7 +158,10 @@ export function TopicsScreen() {
           }
         }}
       />
-      <div className="topic-list" aria-label="Saved topics">
+      <div
+        className="topic-list"
+        aria-label={configured ? 'Saved topics' : 'Suggested topics, not saved'}
+      >
         {preferences.topics.map((topic) => (
           <Fragment key={topic.id}>
             <TopicCard
@@ -1203,7 +1206,7 @@ function PersistenceStatus({
     <p className="hint">
       {configured
         ? `Saved revision ${String(revision)}.`
-        : 'Using initial defaults. Your first save creates the persistent document.'}
+        : 'Nothing is saved yet — this is the suggested starting point. Your first save creates the persistent document.'}
     </p>
   );
 }

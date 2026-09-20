@@ -43,7 +43,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       );
     } catch {
       setError(
-        'Preferences are unavailable. Start the local Worker with PREFERENCES_DIAGNOSTICS_ENABLED=true.',
+        'Preferences could not be loaded. Check your connection and try again.',
       );
       setPreferences(null);
       setProposals([]);

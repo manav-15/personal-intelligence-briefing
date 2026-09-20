@@ -1308,3 +1308,22 @@ diagnostics still 404 — verified to fail with the gate restored. Extracted the
 token fixtures into `src/test/access-tokens.ts` and reused them in the router
 tests. Corrected the now-false claims in `README.md`, the plan, and the deployment
 checklist that preferences were a local-only diagnostic surface.
+
+### Unsaved suggested topics read as saved (2026-09-21)
+
+**User report (verbatim):** “Save preferences before starting a briefing - but
+there are already 3 topics stored in the deployed app” and “Save preferences
+before starting a briefing - is the response from the generate api”
+
+**Outcome:** The generate response was accurate and the deployed document was
+genuinely unconfigured — the hosted log showed `GET /api/preferences` served (200)
+and `listPendingTopicProposals` ran, but no `PUT /api/preferences` was ever sent,
+so `reserveManualBriefingRun` refused. The three topics were `examplePreferences`,
+which `PreferencesContext` clones into state whenever the server reports
+`configured: false`, rendered under an aria-label of "Saved topics". The client now
+states that nothing is saved, labels the list "Suggested topics, not saved",
+explains the precondition on Today and disables generation until a save happens,
+and drops the stale instruction to enable `PREFERENCES_DIAGNOSTICS_ENABLED`
+locally. Verified in a browser with the preferences response intercepted to the
+deployed shape, and re-checked the saved state (revision 3, "Saved topics", button
+enabled). UX-05 records the missing first-run adoption action.

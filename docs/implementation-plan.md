@@ -367,6 +367,19 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Fixed a first-run trap the hosted app exposed. A new deployment
+  shows the suggested topics while none are stored, and the UI labelled that list
+  "Saved topics" with the status line reading "Using initial defaults", so the
+  owner read the suggestions as saved configuration; generation then refused with
+  the API's `Save preferences before starting a briefing.` Today also offered an
+  enabled Generate button, making that refusal the first the user heard of the
+  precondition. The client now says the topics are not saved, the list is labelled
+  "Suggested topics, not saved", Today explains the precondition and links to
+  Topics with generation disabled until something is saved, and the stale advice
+  to start the local Worker with `PREFERENCES_DIAGNOSTICS_ENABLED=true` is gone.
+  Verified in a browser against the deployed response shape (`configured: false`
+  intercepted) and against the saved local document, which is unchanged. Recorded
+  UX-05 for a single action that adopts the suggested topics.
 - **2026-09-21:** Made the deployment configurable. The preferences route group
   applied `diagnosticEnabled('PREFERENCES_DIAGNOSTICS_ENABLED')` to `'*'`, so with
   diagnostics disabled — the deployment's configuration — reads, saves, and topic

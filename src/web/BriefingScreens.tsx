@@ -8,19 +8,30 @@ import type {
 } from '../shared/briefings';
 import { listBriefingArchive, readArchivedBriefing } from './briefings-client';
 import { useBriefing } from './useBriefing';
+import { usePreferences } from './usePreferences';
 
 /** Displays today's edition and restores durable generation progress. */
 export function TodayScreen() {
   const state = useBriefing();
+  const { configured } = usePreferences();
 
   if (state.loading) return <BriefingLoading title="Your daily briefing" />;
 
   return (
     <div className="today-screen">
+      {!configured && (
+        <div className="briefing-feedback" role="status">
+          <p>
+            No topics are saved yet, so a briefing has no preferences to work
+            from. Save them first.
+          </p>
+          <Link to="/topics">Review and save topics</Link>
+        </div>
+      )}
       <div className="briefing-controls">
         <Link to="/topics">Manage topics</Link>
         <button
-          disabled={!state.canGenerate}
+          disabled={!state.canGenerate || !configured}
           onClick={() => void state.generate()}
         >
           {state.busy
