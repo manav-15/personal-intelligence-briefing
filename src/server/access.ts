@@ -252,7 +252,11 @@ async function keysFor(
     return { ok: true, keys: cached.keys };
 
   try {
-    const response = await input.fetcher(
+    // Borrowed into a local first: the Workers runtime brands `fetch`, so
+    // reaching it through a property calls it with the wrong receiver and
+    // throws "Illegal invocation" — a failure Node's fetch never reproduces.
+    const fetchKeys = input.fetcher;
+    const response = await fetchKeys(
       `https://${input.teamDomain}/cdn-cgi/access/certs`,
       {
         headers: { Accept: 'application/json' },

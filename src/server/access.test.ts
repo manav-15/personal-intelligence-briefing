@@ -116,6 +116,25 @@ function jwksFetcher(sets: Signing[][]): {
   return { fetcher, calls: () => calls, urls: () => urls };
 }
 
+/**
+ * Mimics the Workers runtime, which brands `fetch`: reaching it through a
+ * property calls it with a foreign receiver and throws "Illegal invocation".
+ * Node's fetch tolerates that receiver, so only this shape catches the mistake.
+ */
+function receiverStrictFetcher(sets: Signing[][]): Fetcher {
+  const serve = jwksFetcher(sets).fetcher;
+
+  return function strict(
+    this: unknown,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    if (this !== undefined) throw new TypeError('Illegal invocation');
+
+    return serve(input, init);
+  };
+}
+
 function requestWith(token?: string, cookie?: string): Request {
   const headers = new Headers();
 
@@ -148,6 +167,18 @@ describe('cloudflare access identity', () => {
 
     expect(identity).toEqual({ ok: true, userId: 'owner-1', source: 'access' });
     expect(urls()).toEqual([keysUrl]);
+  });
+
+  it('invokes the fetcher as a plain function, as the runtime requires', async () => {
+    const signing = await signingKey('kid-1');
+
+    const identity = await resolveAccessIdentity(
+      bindings,
+      requestWith(await signToken(signing)),
+      receiverStrictFetcher([[signing]]),
+    );
+
+    expect(identity).toMatchObject({ ok: true, userId: 'owner-1' });
   });
 
   it('accepts the browser cookie when no header is present', async () => {
