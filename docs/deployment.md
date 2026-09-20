@@ -166,7 +166,15 @@ a hosted generate call) without a browser session.
 
 Scripts then send `CF-Access-Client-Id` and `CF-Access-Client-Secret`. Be aware
 that a service-token JWT carries an **empty `sub`**; the identity lives in
-`common_name` and `service_token_id`.
+`common_name` and `service_token_id`, which is why the allowlist also matches those
+values.
+
+**Secrets never go in the repository or a chat message.** The client secret is
+shown once and is 64 hex characters; the application's AUD tag is a 32-character
+identifier that is safe to commit. If a secret is ever pasted somewhere it does not
+belong, delete that service token and create a new one — the old value cannot be
+revoked any other way. Locally it belongs in `.dev.vars`, which is gitignored, and
+in deployment it belongs in a Worker secret.
 
 ## Repository steps (commands)
 
