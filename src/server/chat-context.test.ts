@@ -3,7 +3,6 @@ import { exampleBriefing } from '../shared/briefings.test';
 import {
   buildBriefingChatContext,
   chatSources,
-  ensureChatCitation,
   parseChatModelResponse,
   parseChatRequest,
 } from './chat-context';
@@ -143,26 +142,5 @@ describe('briefing chat context', () => {
     );
     expect(parseChatModelResponse({ response: '' })).toBeNull();
     expect(parseChatModelResponse({ answer: 'Wrong field' })).toBeNull();
-  });
-
-  it('adds a code-owned source label when a model answer omits one', () => {
-    const item = exampleBriefing.items[0];
-
-    if (item === undefined) throw new Error('Expected a fixture story.');
-    expect(ensureChatCitation('A grounded answer.', item)).toBe(
-      'A grounded answer. [S1]',
-    );
-    expect(ensureChatCitation('A grounded answer [S1].', item)).toBe(
-      'A grounded answer [S1].',
-    );
-  });
-
-  it('leaves a knowledge-only answer unlabelled instead of attributing it to a source', () => {
-    const item = exampleBriefing.items[0];
-
-    if (item === undefined) throw new Error('Expected a fixture story.');
-    expect(
-      ensureChatCitation('Background: the company was founded in 2015.', item),
-    ).toBe('Background: the company was founded in 2015.');
   });
 });

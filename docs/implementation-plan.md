@@ -367,6 +367,18 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Removed the code-owned citation append from chat, at the owner's
+  direction. `ensureChatCitation` appended `[S1]` to any answer that contained no
+  label, which was defensible while outside knowledge was forbidden and became
+  fabrication once knowledge was allowed: a knowledge-only answer would have been
+  attributed to the story's first source, and the client renders that label as a real
+  link. The function and its two tests are gone, the answer is stored exactly as the
+  model produced it, and the attribution instruction now says labels are the model's
+  to add because no code adds them afterwards. Verified in the browser: a story-fact
+  answer carried [S1] from the model itself, and a knowledge answer came back under
+  "Background:" with no invented label. The cost is explicit — attribution is now
+  instruction-dependent, and the code-owned sources aside is the only label surface.
+  Prompt policy version 2026-09-21.4.
 - **2026-09-21:** Reworked the grounded-chat prompt at the owner's request. It had told
   the model to use no outside knowledge and never to claim to have read the article,
   which the stored history shows it obeying literally: "I can only use the provided

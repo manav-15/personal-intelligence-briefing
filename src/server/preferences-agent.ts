@@ -40,7 +40,6 @@ import {
 import {
   briefingChatModel,
   buildBriefingChatContext,
-  ensureChatCitation,
   parseChatModelResponse,
   parseChatRequest,
 } from './chat-context';
@@ -167,10 +166,9 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
       temperature: 0,
     });
     const answer = parseChatModelResponse(response);
-    const unlabelledContent =
+    const content =
       answer ??
       'I could not produce a grounded answer from the selected briefing story. Please try again.';
-    const content = ensureChatCitation(unlabelledContent, context.item);
 
     this.appendChatMessage(
       session.id,

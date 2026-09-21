@@ -1434,3 +1434,17 @@ long session anchored the model on the previous thread. Verified in the browser 
 fresh conversation: article text answered in detail, a knowledge question answered
 under "Background:" with [S1] retained for story facts, and a lookup request refused
 with an explicit statement of no internet access.
+
+### Auto-append removed from chat answers (2026-09-21)
+
+**User instruction (verbatim):** “Remove auto-append”
+
+**Outcome:** Deleted `ensureChatCitation` and its call site so an answer is stored
+exactly as the model returned it. The append existed to guarantee a visible source
+label; once the prompt allowed the model's own knowledge, the same code inverted into
+fabricated provenance, attaching [S1] to content the story never contained. The
+attribution instruction now states that labels are the model's to add, and the
+code-owned sources aside remains the UI's provenance surface. Verified in the browser
+that a story-fact answer still carries [S1] and a knowledge answer is unlabelled with
+no label added. Prompt policy version 2026-09-21.4; recorded the resulting
+instruction-dependence in CHAT-01.
