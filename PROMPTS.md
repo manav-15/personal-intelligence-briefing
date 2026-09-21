@@ -1597,3 +1597,22 @@ twelve-result window and usable leads fell from 11 to 5, until Brave suspended i
 (`too many requests`) and duckduckgo news returned to 11. Brave News is disabled again
 with the measurement recorded beside the engine set, DISC-12 carries the numbers, and
 the rejected alternative is documented so it is not retried without new evidence.
+
+### General engines and time ranges measured as an evidence lever (2026-09-21)
+
+**User instruction (verbatim):** "Let's also use brave and duckduckgo general with time range to see how the evidence quality becomes"
+
+**Material coding prompt:** Enable the general-category engines, query the same topic set
+across category and range arms, and measure both the leads and the evidence the pipeline
+can retrieve from them.
+
+**Outcome:** Four arms over the same twelve queries. `news + any` returned 204 fully dated
+leads from duckduckgo news; `news + day` returned none, because the only working news
+engine has no range support and SearXNG skips it while bing news is suspended;
+`general + any` returned 177 leads from brave (38% dated) after duckduckgo answered
+CAPTCHA on every query, and those leads were Wikipedia, Reddit and publisher help pages
+that all answered 403 to evidence retrieval, so their ceiling was headline-only;
+`general + day` returned none, because brave rate-limited itself and duckduckgo
+CAPTCHA'd. Brave (general) is disabled again with the measurement written beside the
+engine set, and DISC-12 plus the implementation plan record the table. A throwaway probe
+script was used and deleted; no production code changed.

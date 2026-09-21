@@ -25,8 +25,13 @@ use_default_settings:
       - brave.news
 
 engines:
-  # General/web category: the pipeline searches the news category, so this
-  # engine is never queried by briefing collection.
+  # General/web category engines are disabled: the pipeline searches the news
+  # category, and a general search is not a substitute. Measured on 2026-09-21,
+  # `categories=general&time_range=day` returned nothing (duckduckgo answered
+  # CAPTCHA on every query and brave rate-limited itself), while
+  # `categories=general` without a range returned non-news pages — Wikipedia,
+  # Reddit and publisher help pages — that all answered 403 to evidence
+  # retrieval, so they could only ever be headline-only.
   - name: brave
     disabled: true
   - name: google news

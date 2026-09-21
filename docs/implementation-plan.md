@@ -200,6 +200,27 @@ the dated one and the run's date-resolution budget (six fetches) cannot rescue
 the difference. Brave News is disabled again and the measured reason is recorded
 beside the engine set, so nobody re-enables it without new evidence.
 
+### General-engine and time-range arms (2026-09-21)
+
+Brave (general) was enabled for an experiment and the same twelve queries were
+run across four arms, with evidence retrieval measured through the inspection
+route.
+
+| Arm                    | Leads | Dated | Engines                                                                      | Evidence                                                                                       |
+| ---------------------- | ----- | ----- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `news` + any (current) | 204   | all   | duckduckgo news                                                              | article and description tiers the pipeline already uses                                        |
+| `news` + day           | 0     | —     | none: the only working news engine has no range support, bing news suspended | —                                                                                              |
+| `general` + any        | 177   | 38%   | brave only; duckduckgo answered CAPTCHA on all twelve queries                | non-news pages; Wikipedia, Reddit and a publisher help page all answered 403, so headline-only |
+| `general` + day        | 0     | —     | none: brave rate-limited itself and duckduckgo CAPTCHA'd                     | —                                                                                              |
+
+Both general engines rate-limit or challenge this instance under a twelve-query
+burst, and SearXNG then suspends them (`ban_time_on_fail` 5s, ceiling 120s,
+extended by further attempts), so the arms were also hard to sample twice. Brave
+(general) is disabled again with the measurement recorded beside the engine set.
+The conclusion is that general engines plus a time range are not an evidence
+quality lever: with a range they return nothing, and without one they return
+pages that are neither news nor retrievable.
+
 ### Scope and next slice
 
 Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and
@@ -208,6 +229,11 @@ SearXNG engine and publisher errors are expected and must remain visible. Curren
 work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (eighth entry) — measured the general-category and
+time-range arms, found both dead ends (`news + day` and `general + day` return
+nothing; `general + any` returns unfetchable non-news pages), and recorded them
+so the engine set is not widened on that reasoning again.
 
 Update log: 2026-09-21 (seventh entry) — enabled `brave.news`, measured it in
 an isolated state, and retired it again; recorded that the shared per-query
