@@ -180,6 +180,26 @@ DISC-12. A local run was also left orphaned when a dev server was closed, which
 is why the app reported `created: false` until its 30-minute expiry — the
 documented behaviour for an abandoned reservation.
 
+### Brave News experiment (2026-09-21)
+
+`brave.news` was enabled, measured and retired again, in an isolated Worker
+state so the local development database was untouched except for the throwaway
+config, which was deleted with its state directory.
+
+Three runs with Brave News answering produced 144, 144 and 104 leads with 6, 6
+and 11 usable; the first two show why. Brave News supplied 64-67 leads per run
+that arrive without a date, so they were rejected as `unknown-date`, the bounded
+date resolution recovered exactly one, and its undated volume pushed
+`duckduckgo news` out of the shared twelve-result window, cutting usable leads
+from 11 to 5. On the third run Brave suspended itself (`too many requests`) and
+duckduckgo news returned to 11 usable — the control condition.
+
+The general finding is that the per-query cap, not the engine list, decides
+yield: an undated-heavy engine is net negative because it takes window slots from
+the dated one and the run's date-resolution budget (six fetches) cannot rescue
+the difference. Brave News is disabled again and the measured reason is recorded
+beside the engine set, so nobody re-enables it without new evidence.
+
 ### Scope and next slice
 
 Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and
@@ -188,6 +208,10 @@ SearXNG engine and publisher errors are expected and must remain visible. Curren
 work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (seventh entry) — enabled `brave.news`, measured it in
+an isolated state, and retired it again; recorded that the shared per-query
+result cap is what decides yield, not the engine list.
 
 Update log: 2026-09-21 (sixth entry) — retired `reuters` and raised
 `maxResultsPerQuery` to 12, measured both against the retained diagnostics, and

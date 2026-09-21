@@ -1578,3 +1578,22 @@ engine without range support (`search/processors/abstract.py`, `get_params` retu
 binding constraint; `duckduckgo news` supplies every usable lead and most of the stale
 ones. `npm run check` passes with 209 tests. Both changes were deployed to the Container
 and Worker, with DISC-06 and DISC-12 updated.
+
+### Brave News enabled and measured, then retired (2026-09-21)
+
+**User instruction (verbatim):** "enable brave as well and measure"
+
+**Material coding prompt:** Enable the Brave news engine in the SearXNG settings and
+measure its effect on hosted discovery yield with the structured logs and diagnostics.
+
+**Outcome:** `brave.news` (the news-category engine; plain `brave` is general/web and is
+never queried by news-category collection) was enabled and three generations ran in an
+isolated Worker state — a throwaway Vite config with a separate persistence path, deleted
+with its state afterwards, because an orphaned run blocked the main state and the AI
+binding cannot run remotely in that harness, so composition failed while collection
+measured normally. Brave contributed 64-67 undated leads per run, of which the bounded
+date resolution recovered one; its volume pushed duckduckgo news out of the shared
+twelve-result window and usable leads fell from 11 to 5, until Brave suspended itself
+(`too many requests`) and duckduckgo news returned to 11. Brave News is disabled again
+with the measurement recorded beside the engine set, DISC-12 carries the numbers, and
+the rejected alternative is documented so it is not retried without new evidence.

@@ -2,11 +2,15 @@
 use_default_settings:
   engines:
     # Only news engines that return usable publication dates are kept. Google's
-    # news engine is CAPTCHA-suspended and Brave's news results arrive without
-    # dates, so both are present here only to be disabled explicitly below.
-    # Reuters is retired: measured across five runs it contributed 162 leads and
-    # every one was stale while every usable lead came from duckduckgo news, so
-    # its evergreen results only occupied the per-query result window.
+    # news engine is CAPTCHA-suspended, so it is present here only to be disabled
+    # explicitly below. Reuters is retired: measured across five runs it
+    # contributed 162 leads and every one was stale while every usable lead came
+    # from duckduckgo news. Brave News is retired after measurement: its results
+    # arrive without dates, so 64-67 leads per run were rejected as unknown-date
+    # and one was recovered by the date-resolution budget, while its undated
+    # volume pushed duckduckgo news out of the shared per-query result cap and
+    # cut usable leads from 11 to 5; it also suspended itself under the run's
+    # query burst.
     keep_only:
       - bing news
       - duckduckgo news
@@ -21,10 +25,13 @@ use_default_settings:
       - brave.news
 
 engines:
+  # General/web category: the pipeline searches the news category, so this
+  # engine is never queried by briefing collection.
   - name: brave
     disabled: true
   - name: google news
     disabled: true
+  # Undated news results crowd the per-query window; see the note above.
   - name: brave.news
     disabled: true
   # Dated, direct publisher links for AI and developer stories; ships disabled.
