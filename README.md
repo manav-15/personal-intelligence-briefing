@@ -74,8 +74,9 @@ origins, including WebSocket handshakes.
 ## Validation
 
 The current working tree passes the complete `npm run check` gate — formatting,
-lint, strict type checks, 203 tests and a production build — on Node 24, plus
-live local Worker checks of the diagnostic and Agent routing boundaries. Verifying
+lint, strict type checks, 209 tests and a production build — on Node 24, plus
+live local Worker checks of the diagnostic and Agent routing boundaries. The same
+gate runs in GitHub Actions on every push (`.github/workflows/ci.yml`). Verifying
 the suite from a relocated checkout remains TEST-01. See the
 [implementation plan](docs/implementation-plan.md) for the exact evidence.
 
@@ -97,6 +98,38 @@ Deployment is a separately reviewed action. The Container needs a Workers plan
 that supports Containers, Docker for image builds, and a Cloudflare secret named
 `SEARXNG_SECRET`. Do not expose a public SearXNG route. Review the complete
 [deployment procedure](docs/deployment.md) before publishing.
+
+### Watching a deployed run
+
+The Worker writes one structured JSON line per event (`src/server/log.ts`), so a
+generation can be followed live or after the fact.
+
+Real-time logs, from the Workers & Pages page: select
+`personal-intelligence-briefing`, then **Logs → Live**. The CLI equivalent from
+this repository is:
+
+```sh
+npx wrangler tail --config wrangler.jsonc
+```
+
+`--format json` makes the stream machine-readable, and the events this Worker
+emits are the `logs[].message[]` entries that parse as JSON:
+
+```sh
+npx wrangler tail --config wrangler.jsonc --format json \
+  | jq -c '.logs[].message[] | fromjson? | select(.event)'
+```
+
+A briefing run logs `briefing.started`, `briefing.collected` (per-query status,
+collection failures with engine names, and every returned lead counted by the
+outcome collection gave it), `briefing.composed`, then `briefing.published` or
+`briefing.failed`. Chat and topic-proposal calls log their own events, and a
+refused request logs `access.denied`.
+
+Real-time logs are not stored and may drop messages under load. The same events
+are persisted for seven days in Workers Logs, which is where to look after a run
+has finished; the dashboard path and the retention limits are recorded in the
+[deployment guide](docs/deployment.md).
 
 The [implementation plan](docs/implementation-plan.md) records validation and
 increment status. All actionable limitations and follow-ups are maintained only

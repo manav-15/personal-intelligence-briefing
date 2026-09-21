@@ -69,12 +69,32 @@ does not establish successful hosted Container startup or AI inference.
 1. Without a session, the hostname requires Access authentication. Direct owner
    API requests must never return saved data without a valid identity.
 2. After sign-in, save preferences and generate an edition from SearXNG. Record
-   Container startup, engine failures, usable evidence and publication outcome.
+   Container startup, engine failures, usable evidence and publication outcome
+   from the run's `briefing.*` events (below) rather than by inference.
 3. Confirm `/api/inspection/search` and `/api/feasibility/discovery` return 404.
 4. Confirm foreign Agent owner/binding paths return 404 and a signed-in chat
    connection works through Access.
 5. Reopen the saved edition and chat after reload. Verify total collection
    failure preserves existing editions and partial failure remains labelled.
+
+## Logs
+
+The Worker writes one structured JSON line per event, and both of Cloudflare's
+log surfaces see them:
+
+- **Real-time logs** are for watching a run happen: **Workers & Pages →
+  `personal-intelligence-briefing` → Logs → Live**, or
+  `npx wrangler tail --config wrangler.jsonc` from this repository. They are not
+  stored, may sample under load, and allow at most ten concurrent viewers.
+- **Workers Logs** is the stored surface: the same events plus invocation logs,
+  queryable in **Workers & Pages → `personal-intelligence-briefing` →
+  Observability**, retained for **seven days** on the Workers Paid plan (three on
+  Free). `wrangler.jsonc` enables it with `observability.logs.persist`.
+
+Both are Cloudflare platform logs, not application telemetry: the Worker adds no
+analytics, no third-party exporter, and no extra binding. To keep logs beyond
+seven days, ship them elsewhere — OpenTelemetry export, Workers Logpush to R2 or
+another destination, or a Tail Worker.
 
 These are verification steps, not a second backlog. Open deployment and quality
 work is tracked in `docs/data-pipeline.md` under DISC-10, DEPLOY-01, DEPLOY-02,
