@@ -1690,3 +1690,46 @@ explicit authorized-session notice.
 **Outcome:** Added the deployed-app sign-in note: users can choose Google or an
 emailed one-time PIN, and PIN-delivery issues are directed to the owner for
 allowlisting support.
+
+### Mobile chat layout, increment 1 (2026-09-21)
+
+**User instruction (verbatim, excerpt):** "The biggest problems are: Too much
+before the messages: navigation, a large title, explanatory text, saved
+conversations, and sources all consume vertical space. … I'd implement this in
+three reviewable increments: 1. Make the conversation the primary mobile screen.
+Replace the large introduction with a compact 'Chat' header and a Conversations
+button. Open saved conversations in an accessible drawer, with New conversation
+inside it. Show the active story in a compact header and collapse citations
+behind Sources (3), while keeping evidence limitations visible. Keep story
+selection prominent when starting a new conversation. … Run the existing npm run
+check gate before implementation review. what do you feel about the plan?"
+
+**Assistant review prompt (verbatim, excerpt):** "The diagnosis is right; the
+increments are ordered wrong for the cheapest wins, and four repo-level
+obligations are missing. … Revised sequencing I'd approve: 1. Chat layout +
+width fix (chat-local header, story header, `<details>` Sources with visible tier
+legend, drawer for conversations, relocate retention copy, `max-width:100%` +
+reduced transcript padding, Delete confirm into actions). Shell untouched; all
+six routes re-verified unchanged. 2. Composer + follow behavior … 3. Touch
+polish … Two decisions before I start increment 1: (a) chat-only or shell-wide
+for the compact header, and (b) sticky-composer-over-document-scroll versus
+fixed-height app shell. I recommend chat-only, and sticky."
+
+**User instruction (verbatim):** "First, work on 1 and run it locally"
+
+**Outcome:** Increment 1 implemented as 5.2. The chat screen now renders a
+compact "Chat" heading with a `Conversations (n)` button, one story-context block,
+a collapsed `Sources (n)` disclosure whose summary keeps the citation tier counts
+visible, and then the transcript and composer. Saved conversations, New
+conversation, and Delete moved into `src/web/ChatDrawer.tsx`, a modal drawer with
+focus trapping, Escape and backdrop close, and focus return to its opener; Delete
+now confirms, matching topic and edition deletion. Retention text moved into the
+drawer instead of being deleted, and a detached conversation no longer shows
+citations from an unrelated loaded edition. Transcript padding dropped to 12px
+(10px below 720px), messages lost the 92% cap and gained `overflow-wrap: anywhere`,
+and the screen is capped at 780px to match the briefing reading surface. Verified
+in the local Worker at 320/375/390/430/768/1280px: no horizontal overflow, 44px
+controls, working drawer and delete flows, and assistant text width 262px → 310px
+at 390px. That pass caught a story-picker grid overflow at 320–430px, fixed with
+`minmax(0, 1fr)` tracks and `min-width: 0`. Increments 2 and 3 remain open as
+UX-08 and UX-09.

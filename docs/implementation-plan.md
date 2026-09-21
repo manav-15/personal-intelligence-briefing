@@ -294,10 +294,21 @@ pages that are neither news nor retrievable.
 
 Daily scheduling is implemented (SCHED-01) and the schedule settings now describe
 what the Worker does. DISC-11 remains deferred.
-SearXNG engine and publisher errors are expected and must remain visible. Current
-work has stopped at documentation completion. The next implementation work, when
-resumed, follows the existing backlog entries; this section is not a second
-TODO list. Historical milestones below describe earlier scope and evidence.
+SearXNG engine and publisher errors are expected and must remain visible. The
+mobile chat plan is now partly implemented: increment 1 landed as 5.2, and its
+increments 2 and 3 stay open under UX-08 and UX-09, with the shell pass under
+UX-06 and device checks under UX-07. Current work has stopped at documentation
+completion. The next implementation work, when resumed, follows the existing
+backlog entries; this section is not a second TODO list. Historical milestones
+below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (eleventh entry) — restructured the chat screen for phones
+as increment 5.2: compact header with a Conversations drawer, collapsed Sources
+that keeps citation tier counts visible, wider messages and reduced transcript
+padding, Delete behind a confirmation inside the drawer, and a 780px screen cap
+that matches the briefing reading surface. Verification found and fixed a
+story-picker grid overflow at 320–430px. `npm run check` passes with 231 tests;
+increments 2 and 3 remain open under UX-08 and UX-09.
 
 Update log: 2026-09-21 (tenth entry) — added owner-scoped archive deletion for
 one or all editions, preserving detached chat transcripts while deleting the
@@ -1566,6 +1577,63 @@ the Agent transport transcript. Migration 8 adds `chat_sessions` and
 browser reload with both user and Agent turns, then correctly reopened its
 original archived briefing and citation. The next live answer included `[S1]`;
 code now adds the selected story's first code-owned label if the model omits it.
+
+## Increment 5.2 — Mobile chat layout: implemented, awaiting review
+
+Scope decided by the user as increment 1 of a three-increment mobile chat plan:
+make the conversation the primary screen. Increment 2 (composer reachability and
+follow behaviour, UX-08) and increment 3 (touch and reading polish, UX-09) remain
+open, and the application shell is deliberately unchanged here (UX-06).
+
+The chat screen no longer stacks an eyebrow, a 2.3–3.8rem title, a retention
+paragraph, a saved-conversation sidebar, a story picker, and a source list above
+the transcript. It now renders a compact "Chat" heading with a
+`Conversations (n)` button, one story-context block (the picker before a
+conversation exists, the active story headline afterwards), a collapsed
+`Sources (n)` disclosure, and then the transcript and composer.
+`src/web/ChatDrawer.tsx` moves saved conversations, New conversation, and Delete
+into a modal drawer that is full width below 720px and right-anchored at 420px
+above it; the drawer traps focus, closes on Escape and on a backdrop tap, and the
+screen returns focus to the button that opened it. Delete now confirms before
+removing a conversation, matching topic and edition deletion, and no longer sits
+beside Send.
+
+Citations stay collapsed behind `Sources (n)`, whose summary states the tier
+counts ("all article evidence", "2 article evidence · 1 limited description"), so
+folding the list never hides that an answer rests on a limited source
+description. The retention text — one conversation per selected story, latest 200
+messages, kept until deleted — moved into the drawer rather than being dropped. A
+detached conversation, whose briefing was deleted, now shows its stored headline
+with "this briefing was deleted" and no citation list, instead of the previous
+list drawn from whichever edition happened to be loaded.
+
+Reading width: transcript padding fell from 20px to 12px (10px below 720px),
+messages lost the 92% cap and use 12px/14px padding with `overflow-wrap: anywhere`,
+and the screen is capped at 780px to match the briefing reading surface now that
+the sidebar is gone. Measured assistant text width: 262px → 310px at 390px and
+194px → 240px at 320px, with no horizontal overflow at any tested width.
+
+Validation: `npm run check` passes with 231 tests and a production build.
+Verified in the local Worker through the browser at 320, 375, 390, 430, 768, and
+1280px against the eight retained local conversations. No horizontal overflow in
+either the start or the open state; the drawer, story picker, start button,
+source summary, and Send control are at least 44px tall; the drawer traps focus
+across 14 Tabs, wraps with Shift+Tab, closes on Escape and on a backdrop tap, and
+returns focus to its opener; New conversation, open, and Delete (confirm accepted
+and dismissed) behave as described; a 180-character URL and a 300-character
+unbroken headline do not overflow. That pass found one defect, now fixed: the
+story `<select>` pushed the new grid track past the viewport at 320–430px until
+the grid columns became `minmax(0, 1fr)` with `min-width: 0` on the picker.
+
+Limitations: the detached-conversation, no-edition, and load-failure screens were
+not exercised, because the local Durable Object holds no detached session and each
+of those states needs a real edition; keyboard opening, rotation, and iOS
+Safari/Android Chrome behaviour belong to increment 2 and were not tested on a
+device (UX-07); the shell header, navigation, and footer are unchanged, so
+navigation still consumes about 105px above the chat screen at 390px and wraps to
+two rows at 320px (UX-06).
+
+Next slice: increment 2, keeping messages and the composer within reach (UX-08).
 
 ## Increment 6: Cloudflare hosting — plan, not started (2026-09-21)
 

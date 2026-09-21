@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ChatSession } from '../shared/chat';
 import type { Briefing, BriefingItem } from '../shared/briefings';
 import { composerKeyAction, insertLineBreak } from './chat-composer';
+import { evidenceSummary } from './chat-sources';
+import { ConversationDrawer } from './ChatDrawer';
 import {
   createChatSession,
   deleteChatSession,
@@ -77,8 +79,11 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
   const [input, setInput] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [changingConversation, setChangingConversation] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const actionVersion = useRef(0);
   const actionPending = useRef(false);
+  const conversationsButton = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
   const agent = useAgent({ agent: 'personal-briefing', name: ownerId });
   const {
     isRecovering,
@@ -105,6 +110,15 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
         setLoadFailed(true);
       });
   }, []);
+
+  // The drawer unmounts before its own cleanup can hold focus, so the screen
+  // returns focus to the button that opened it once the drawer is gone.
+  useEffect(() => {
+    if (drawerWasOpen.current && !drawerOpen)
+      conversationsButton.current?.focus();
+
+    drawerWasOpen.current = drawerOpen;
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (session === null || transportMessages.length === 0) return;
@@ -161,6 +175,7 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
     if (nextSession.briefingRunId === null) {
       const history = await readChatSession(nextSession.id);
 
+      setSelectedStoryId(nextSession.storyId);
       setSession(history.session);
       setMessages(history.messages);
       setActionError(
@@ -187,10 +202,18 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
   async function removeConversation() {
     if (session === null) return;
 
+    if (
+      !window.confirm(
+        'Delete this conversation? Its messages cannot be recovered.',
+      )
+    )
+      return;
+
     await deleteChatSession(session.id);
     setSessions((current) => current.filter((item) => item.id !== session.id));
     setSession(null);
     setMessages([]);
+    setDrawerOpen(false);
   }
 
   async function beginNewConversation() {
@@ -260,58 +283,184 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
 
   return (
     <section className="chat-screen">
-      <p className="eyebrow">Grounded follow-ups</p>
-      <h1>Ask about a story</h1>
-      <p className="intro">
-        Each conversation is saved under its selected story. The latest 200
-        messages are shown. Older briefing editions remain here as conversation
-        history until you delete them.
-      </p>
-      {(actionError !== null || transportError !== undefined) && (
-        <p role="alert">
-          {actionError ??
-            'The answer could not be completed. Check your connection and try your question again.'}
-        </p>
-      )}
-      <div className="chat-layout">
-        <aside className="chat-library">
-          <strong>Saved conversations</strong>
+      <div className="chat-shell" inert={drawerOpen}>
+        <header className="chat-head">
+          <h1>Chat</h1>
           <button
-            disabled={busy}
+            aria-expanded={drawerOpen}
+            aria-haspopup="dialog"
+            className="chat-conversations"
             onClick={() => {
-              void changeConversation(beginNewConversation);
+              setDrawerOpen(true);
             }}
+            ref={conversationsButton}
             type="button"
           >
-            New conversation
+            Conversations
+            <small>{sessions.length}</small>
           </button>
-          {sessions.length === 0 && <p>No saved conversations yet.</p>}
-          <ul>
-            {sessions.map((item) => (
-              <li key={item.id}>
-                <button
-                  disabled={busy}
-                  aria-pressed={item.id === session?.id}
-                  onClick={() => {
-                    void changeConversation(() => openConversation(item));
-                  }}
-                  type="button"
+        </header>
+        {(actionError !== null || transportError !== undefined) && (
+          <p className="chat-alert" role="alert">
+            {actionError ??
+              'The answer could not be completed. Check your connection and try your question again.'}
+          </p>
+        )}
+        <StoryContext
+          briefing={briefing}
+          busy={busy}
+          detached={detachedSession}
+          onSelectStory={setSelectedStoryId}
+          onStart={() => {
+            void changeConversation(startConversation);
+          }}
+          selectedStory={selectedStory}
+          selectedStoryId={selectedStoryId}
+          session={session}
+        />
+        {session !== null && (
+          <>
+            <div aria-live="polite" className="chat-transcript">
+              {messages.length === 0 && (
+                <p className="chat-empty">
+                  Try “What changed?” or “What is the practical implication
+                  here?”
+                </p>
+              )}
+              {messages.map((message) => (
+                <article
+                  className={`chat-message chat-message-${message.role}`}
+                  key={message.id}
                 >
-                  <span>{item.storyHeadline}</span>
-                  <small>{item.briefingDate}</small>
+                  <strong>
+                    {message.role === 'user' ? 'You' : 'Briefing Agent'}
+                  </strong>
+                  <p>{message.content}</p>
+                </article>
+              ))}
+              {isRecovering && (
+                <p className="chat-status">Reconnecting to your answer…</p>
+              )}
+            </div>
+            <form className="chat-composer" onSubmit={submit}>
+              <label>
+                Your question
+                <textarea
+                  disabled={composer.disabled}
+                  maxLength={2_000}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    const action = composerKeyAction(event);
+
+                    if (action === 'submit') {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+
+                      return;
+                    }
+
+                    if (action !== 'newline') return;
+                    event.preventDefault();
+                    const inserted = insertLineBreak(
+                      event.currentTarget.value,
+                      event.currentTarget.selectionStart,
+                      event.currentTarget.selectionEnd,
+                    );
+
+                    setInput(inserted.value);
+                    requestAnimationFrame(() => {
+                      event.currentTarget.setSelectionRange(
+                        inserted.caret,
+                        inserted.caret,
+                      );
+                    });
+                  }}
+                  placeholder={composer.placeholder}
+                  value={input}
+                />
+              </label>
+              <p className="chat-empty">
+                Enter sends your question. ⌘Enter (or Ctrl+Enter) starts a new
+                line.
+              </p>
+              <div>
+                <button
+                  disabled={composer.disabled || !input.trim()}
+                  type="submit"
+                >
+                  {busy ? 'Answering…' : 'Ask question'}
                 </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-        <div className="chat-conversation">
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+      {drawerOpen && (
+        <ConversationDrawer
+          activeSessionId={session?.id ?? null}
+          busy={busy}
+          onClose={() => {
+            setDrawerOpen(false);
+          }}
+          onDelete={() => {
+            void changeConversation(removeConversation);
+          }}
+          onNew={() => {
+            setDrawerOpen(false);
+            void changeConversation(beginNewConversation);
+          }}
+          onOpen={(item) => {
+            setDrawerOpen(false);
+            void changeConversation(() => openConversation(item));
+          }}
+          sessions={sessions}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Shows what a follow-up is grounded in: the story picker before a conversation
+ * exists, the active story once it does, and the stored citations for either.
+ */
+function StoryContext({
+  briefing,
+  busy,
+  detached,
+  onSelectStory,
+  onStart,
+  selectedStory,
+  selectedStoryId,
+  session,
+}: {
+  briefing: Briefing;
+  busy: boolean;
+  detached: boolean;
+  onSelectStory: (storyId: string) => void;
+  onStart: () => void;
+  selectedStory: BriefingItem | undefined;
+  selectedStoryId: string;
+  session: ChatSession | null;
+}) {
+  return (
+    <>
+      {session === null ? (
+        <div className="chat-start">
+          <h2>Start a conversation</h2>
+          <p className="chat-hint">
+            Pick the story this conversation stays grounded in. Its stored
+            sources are the only evidence a follow-up can cite.
+          </p>
           <label className="chat-story-picker">
             Story context
             <select
               aria-label="Story context"
-              disabled={busy || session !== null}
+              disabled={busy}
               onChange={(event) => {
-                setSelectedStoryId(event.target.value);
+                onSelectStory(event.target.value);
               }}
               value={selectedStoryId}
             >
@@ -322,107 +471,29 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
               ))}
             </select>
           </label>
-          {selectedStory !== undefined && <ChatSources story={selectedStory} />}
-          {session === null ? (
-            <button
-              disabled={busy || selectedStory === undefined}
-              onClick={() => {
-                void changeConversation(startConversation);
-              }}
-              type="button"
-            >
-              Start saved conversation
-            </button>
-          ) : (
-            <>
-              <div aria-live="polite" className="chat-transcript">
-                {messages.length === 0 && (
-                  <p className="chat-empty">
-                    Try “What changed?” or “What is the practical implication
-                    here?”
-                  </p>
-                )}
-                {messages.map((message) => (
-                  <article
-                    className={`chat-message chat-message-${message.role}`}
-                    key={message.id}
-                  >
-                    <strong>
-                      {message.role === 'user' ? 'You' : 'Briefing Agent'}
-                    </strong>
-                    <p>{message.content}</p>
-                  </article>
-                ))}
-                {isRecovering && (
-                  <p className="chat-status">Reconnecting to your answer…</p>
-                )}
-              </div>
-              <form className="chat-composer" onSubmit={submit}>
-                <label>
-                  Your question
-                  <textarea
-                    disabled={composer.disabled}
-                    maxLength={2_000}
-                    onChange={(event) => {
-                      setInput(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      const action = composerKeyAction(event);
-
-                      if (action === 'submit') {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-
-                        return;
-                      }
-
-                      if (action !== 'newline') return;
-                      event.preventDefault();
-                      const inserted = insertLineBreak(
-                        event.currentTarget.value,
-                        event.currentTarget.selectionStart,
-                        event.currentTarget.selectionEnd,
-                      );
-
-                      setInput(inserted.value);
-                      requestAnimationFrame(() => {
-                        event.currentTarget.setSelectionRange(
-                          inserted.caret,
-                          inserted.caret,
-                        );
-                      });
-                    }}
-                    placeholder={composer.placeholder}
-                    value={input}
-                  />
-                </label>
-                <p className="chat-empty">
-                  Enter sends your question. ⌘Enter (or Ctrl+Enter) starts a new
-                  line.
-                </p>
-                <div>
-                  <button
-                    disabled={composer.disabled || !input.trim()}
-                    type="submit"
-                  >
-                    {busy ? 'Answering…' : 'Ask question'}
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      void changeConversation(removeConversation);
-                    }}
-                    type="button"
-                  >
-                    Delete conversation
-                  </button>
-                </div>
-              </form>
-            </>
-          )}
+          <button
+            className="primary"
+            disabled={busy || selectedStory === undefined}
+            onClick={onStart}
+            type="button"
+          >
+            Start saved conversation
+          </button>
         </div>
-      </div>
-    </section>
+      ) : (
+        <div className="chat-active-story">
+          <span>Story context</span>
+          <strong>{session.storyHeadline}</strong>
+          <small>
+            {session.briefingDate}
+            {detached ? ' · this briefing was deleted' : ''}
+          </small>
+        </div>
+      )}
+      {!detached && selectedStory !== undefined && (
+        <ChatSources story={selectedStory} />
+      )}
+    </>
   );
 }
 
@@ -489,11 +560,24 @@ async function loadChatBriefing(): Promise<Briefing | null> {
   return latest === undefined ? null : readArchivedBriefing(latest.runId);
 }
 
-/** Renders only citations selected by application code for the current story context. */
+/**
+ * Renders only citations selected by application code for the current story context.
+ *
+ * The list starts collapsed so the transcript keeps the screen, while the
+ * summary states the evidence tiers: a reader who never expands it still learns
+ * that a story was answered from a limited source description.
+ */
 function ChatSources({ story }: { story: BriefingItem }) {
   return (
-    <aside className="chat-sources">
-      <strong>Sources available to chat</strong>
+    <details className="chat-sources">
+      <summary>
+        Sources ({story.citations.length})
+        <small>
+          {evidenceSummary(
+            story.citations.map((source) => source.evidenceTier),
+          )}
+        </small>
+      </summary>
       <ul>
         {story.citations.map((source, index) => (
           <li key={source.sourceUrl}>
@@ -509,6 +593,6 @@ function ChatSources({ story }: { story: BriefingItem }) {
           </li>
         ))}
       </ul>
-    </aside>
+    </details>
   );
 }
