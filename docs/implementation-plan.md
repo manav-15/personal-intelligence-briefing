@@ -113,6 +113,30 @@ containers instances` reports no live instance because the Container starts on
 demand, and the only caller is the authenticated generation route, so the check
 needs a signed-in session or an Access service token.
 
+### First hosted runs through the Container (2026-09-21)
+
+Two signed-in generations ran against the deployment while `wrangler tail`
+streamed Worker, Workflow and Container traffic.
+
+- The Container started on demand (instance `fa945c62`, location `nrt10`) and the
+  Workflow's discovery step issued twelve `GET http://searxng.internal/search`
+  requests, every one answered `Ok`. The instance then stopped, which is the
+  configured idle behaviour. This is the first hosted run with a working
+  discovery provider.
+- Collection returned one eligible candidate and seven collection failures in
+  both runs. The first run composed and published a one-item `partial` edition
+  (limitations: evidence collection incomplete, short edition, topic coverage).
+  The second composed nothing usable and failed with `No new stories met your
+  preferences with enough supporting evidence.`
+- Workflow instances for both runs completed; step outputs are readable with
+  `wrangler workflows instances describe briefing-workflow <id>`. The
+  `reconcileWorkflow` poll after publication calls `failBriefingRun`, which the
+  Agent rejects because the run is already published, so the edition stands.
+
+The limiting factor is therefore hosted eligible yield rather than Container
+availability: queries succeed, but few returned leads are fresh, dated and
+non-duplicate. That measurement and its tuning are tracked as DISC-12.
+
 ### Scope and next slice
 
 Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and

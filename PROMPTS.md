@@ -1518,3 +1518,18 @@ hostname policy is enforcing. Containers require a Workers Paid plan, which supe
 the earlier free-tier decision recorded in DISC-11 and the plan. Hosted generation
 through the Container is still unverified: the Container starts on demand and the only
 caller is the authenticated generation route.
+
+### First hosted generations through the deployed Container (2026-09-21)
+
+**User confirmation (verbatim):** "done" — after being asked to sign in and click Generate
+while `wrangler tail` streamed production logs.
+
+**Outcome:** The Container started on demand (instance `fa945c62`, `nrt10`) and answered all
+twelve `GET http://searxng.internal/search` discovery requests for the Workflow before
+stopping, proving the private binding path hosted. Collection returned one eligible
+candidate with seven failures in both runs: the first published a one-item partial edition,
+the second failed composition with `No new stories met your preferences with enough
+supporting evidence.` Workflow step outputs were read with `wrangler workflows instances
+describe`, which is how the composition result was confirmed. The remaining limitation is
+hosted eligible yield per engine, recorded as DISC-12 with the measured evidence; DEPLOY-01
+and DISC-10 were updated accordingly.
