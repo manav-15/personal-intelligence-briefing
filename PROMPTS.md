@@ -1556,3 +1556,25 @@ runs logged the four pipeline events as JSON lines and reported
 `returned: 95, candidates: 6, outcomes: stale:89/description:4/article:1/headline-only:1`
 with `bing news` the only failing engine — which moved DISC-06 from "measure
 first" to a concrete missing-range-filter fix.
+
+### Discovery engine experiment: retire reuters, widen per-query results (2026-09-21)
+
+**User correction (verbatim):** "timeRange: 'day' is not supported by brave"
+
+**User decision (verbatim):** "Do both together" — retire `reuters` and raise
+`maxResultsPerQuery`, then re-measure.
+
+**Material coding prompt:** Retire `reuters` from the SearXNG engine set, raise
+`maxResultsPerQuery` from 8 to 12, and measure the effect with the retained
+diagnostics and the `briefing.collected` event.
+
+**Outcome:** Verified in the pinned SearXNG source that a range filter skips any
+engine without range support (`search/processors/abstract.py`, `get_params` returns
+`None`), and that `duckduckgo news` — the only engine producing usable leads — has
+`time_range_support=False`, so the earlier `timeRange: 'day'` proposal was withdrawn
+(DISC-06). `reuters` is out of `keep_only` (162 stale, 0 usable across five runs) and
+`maxResultsPerQuery` is 12. Two post-change runs returned 104 leads with 11 usable each
+(against 1-11 before) and eight leads dropped by the evidence budget, which is now the
+binding constraint; `duckduckgo news` supplies every usable lead and most of the stale
+ones. `npm run check` passes with 209 tests. Both changes were deployed to the Container
+and Worker, with DISC-06 and DISC-12 updated.

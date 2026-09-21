@@ -40,7 +40,7 @@ export const briefingCollectionBudgetSchema = z.strictObject({
 /** Current bounded collection defaults; retries remain disabled until Workflow backoff exists. */
 export const defaultBriefingCollectionBudget = {
   maxQueries: 12,
-  maxResultsPerQuery: 8,
+  maxResultsPerQuery: 12,
   maxCandidates: 36,
   maxEvidenceFetches: 12,
   maxDateResolutionFetches: 6,

@@ -157,6 +157,29 @@ guessed cause of small editions: discovery answers, but the missing provider-sid
 date filter leaves almost every lead outside the freshness window, so DISC-06 now
 carries the fix and DISC-12 the before/after re-measurement.
 
+### Discovery engine experiment (2026-09-21)
+
+Both proposed changes landed together and were measured before deploying:
+`reuters` is retired from `infra/searxng/settings.yml` and
+`maxResultsPerQuery` is now 12.
+
+Five runs before the change (8 results per query, reuters enabled) produced
+usable lead counts of 1, 3, 4, 11, 11 while reuters supplied 162 stale leads and
+none usable. Two runs after the change (12 results per query, reuters off) each
+returned 104 leads with 11 usable, all from `duckduckgo news`, 84 stale — also
+all from `duckduckgo news` — and eight leads dropped by the run's evidence
+budget. Editions went from one item before to three and two items after.
+
+Signal-to-noise improved and nothing usable was lost, but the ceiling is not the
+engine set: `duckduckgo news` is the only engine returning fresh dated leads and
+about four fifths of what it returns is older than the window. A provider-side
+date filter cannot help, because SearXNG skips engines without range support and
+that engine is one of them (DISC-06). The next levers are the evidence budget
+(`evidence-budget: 8`) and the failing `bing news` engine, both recorded in
+DISC-12. A local run was also left orphaned when a dev server was closed, which
+is why the app reported `created: false` until its 30-minute expiry — the
+documented behaviour for an abandoned reservation.
+
 ### Scope and next slice
 
 Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and
@@ -165,6 +188,11 @@ SearXNG engine and publisher errors are expected and must remain visible. Curren
 work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (sixth entry) — retired `reuters` and raised
+`maxResultsPerQuery` to 12, measured both against the retained diagnostics, and
+recorded that the remaining limit is `duckduckgo news`'s fresh share rather than
+engine availability.
 
 Update log: 2026-09-21 (fifth entry) — added structured Workers Logs events
 across the briefing pipeline, chat and topic proposals, enabled observability in

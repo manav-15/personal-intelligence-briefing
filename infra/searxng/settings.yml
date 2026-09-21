@@ -4,12 +4,12 @@ use_default_settings:
     # Only news engines that return usable publication dates are kept. Google's
     # news engine is CAPTCHA-suspended and Brave's news results arrive without
     # dates, so both are present here only to be disabled explicitly below.
-    # General engines are kept alongside them because the news category alone
-    # leaves whole topics uncovered — football returns nothing from Reuters.
+    # Reuters is retired: measured across five runs it contributed 162 leads and
+    # every one was stale while every usable lead came from duckduckgo news, so
+    # its evergreen results only occupied the per-query result window.
     keep_only:
       - bing news
       - duckduckgo news
-      - reuters
       - duckduckgo
       - mojeek
       - hackernews
