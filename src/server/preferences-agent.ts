@@ -40,6 +40,7 @@ import {
 import {
   briefingChatModel,
   buildBriefingChatContext,
+  buildChatMessages,
   parseChatModelResponse,
   parseChatRequest,
 } from './chat-context';
@@ -139,7 +140,6 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         session.storyId,
         'single-user',
       ),
-      question.content,
     );
 
     if (context === null)
@@ -154,15 +154,10 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
 
     const response = await this.env.AI.run(briefingChatModel, {
       max_tokens: 650,
-      messages: [
-        { role: 'system', content: context.system },
-        ...this.readChatMessages(session.id, 'single-user', 12).map(
-          (message) => ({
-            role: message.role,
-            content: message.content,
-          }),
-        ),
-      ],
+      messages: buildChatMessages(
+        context,
+        this.readChatMessages(session.id, 'single-user', 12),
+      ),
       temperature: 0,
     });
     const answer = parseChatModelResponse(response);
@@ -1214,10 +1209,12 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
 
     return [
       ...this.ctx.storage.sql.exec<ChatMessage>(
-        `SELECT id, role, content, created_at AS createdAt FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC, id ASC LIMIT ${String(maximum)}`,
+        `SELECT id, role, content, created_at AS createdAt FROM chat_messages WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ${String(maximum)}`,
         sessionId,
       ),
-    ].map((row) => chatMessageSchema.parse(row));
+    ]
+      .reverse()
+      .map((row) => chatMessageSchema.parse(row));
   }
 
   /** Appends an idempotent user or Agent turn and advances its session in archive ordering. */

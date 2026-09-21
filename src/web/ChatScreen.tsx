@@ -1,6 +1,6 @@
 import { useAgent } from 'agents/react';
 import { useAgentChat } from '@cloudflare/ai-chat/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ChatSession } from '../shared/chat';
 import type { Briefing, BriefingItem } from '../shared/briefings';
 import { composerKeyAction, insertLineBreak } from './chat-composer';
@@ -27,17 +27,22 @@ export function ChatScreen() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [selectedStoryId, setSelectedStoryId] = useState('');
   const [input, setInput] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [changingConversation, setChangingConversation] = useState(false);
+  const actionVersion = useRef(0);
+  const actionPending = useRef(false);
   const agent = useAgent({ agent: 'personal-briefing', name: 'single-user' });
   const {
     isRecovering,
     isStreaming,
     messages: transportMessages,
     sendMessage,
+    error: transportError,
   } = useAgentChat({ agent, body: () => ({ sessionId: session?.id }) });
   const selectedStory = briefing?.items.find(
     (story) => story.id === selectedStoryId,
   );
-  const busy = isStreaming || isRecovering;
+  const busy = isStreaming || isRecovering || changingConversation;
 
   useEffect(() => {
     void loadChatData()
@@ -54,8 +59,38 @@ export function ChatScreen() {
   useEffect(() => {
     if (session === null || transportMessages.length === 0) return;
 
-    void refreshSession(session.id, setMessages);
-  }, [session, transportMessages.length]);
+    let active = true;
+    const version = actionVersion.current;
+
+    void refreshSession(session.id, (history) => {
+      if (active && version === actionVersion.current) setMessages(history);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [session, transportMessages.length, isStreaming, isRecovering]);
+
+  async function changeConversation(action: () => Promise<void>) {
+    if (actionPending.current || isStreaming || isRecovering) return;
+    actionPending.current = true;
+    actionVersion.current += 1;
+    setChangingConversation(true);
+    setActionError(null);
+
+    try {
+      await action();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : 'Could not update this conversation. Please try again.',
+      );
+    } finally {
+      actionPending.current = false;
+      setChangingConversation(false);
+    }
+  }
 
   async function startConversation() {
     if (
@@ -111,9 +146,13 @@ export function ChatScreen() {
 
     if (!question || session === null || busy) return;
 
+    setActionError(null);
     void sendMessage({
       role: 'user',
       parts: [{ type: 'text', text: question }],
+    }).catch(() => {
+      setInput(question);
+      setActionError('Your question could not be sent. Please try again.');
     });
     setMessages((current) => [
       ...current,
@@ -162,15 +201,23 @@ export function ChatScreen() {
       <p className="eyebrow">Grounded follow-ups</p>
       <h1>Ask about a story</h1>
       <p className="intro">
-        Each conversation is saved under its selected story. Older briefing
-        editions remain here as conversation history until you delete them.
+        Each conversation is saved under its selected story. The latest 200
+        messages are shown. Older briefing editions remain here as conversation
+        history until you delete them.
       </p>
+      {(actionError !== null || transportError !== undefined) && (
+        <p role="alert">
+          {actionError ??
+            'The answer could not be completed. Check your connection and try your question again.'}
+        </p>
+      )}
       <div className="chat-layout">
         <aside className="chat-library">
           <strong>Saved conversations</strong>
           <button
+            disabled={busy}
             onClick={() => {
-              void beginNewConversation();
+              void changeConversation(beginNewConversation);
             }}
             type="button"
           >
@@ -181,9 +228,10 @@ export function ChatScreen() {
             {sessions.map((item) => (
               <li key={item.id}>
                 <button
+                  disabled={busy}
                   aria-pressed={item.id === session?.id}
                   onClick={() => {
-                    void openConversation(item);
+                    void changeConversation(() => openConversation(item));
                   }}
                   type="button"
                 >
@@ -217,7 +265,7 @@ export function ChatScreen() {
             <button
               disabled={busy || selectedStory === undefined}
               onClick={() => {
-                void startConversation();
+                void changeConversation(startConversation);
               }}
               type="button"
             >
@@ -297,7 +345,7 @@ export function ChatScreen() {
                   <button
                     disabled={busy}
                     onClick={() => {
-                      void removeConversation();
+                      void changeConversation(removeConversation);
                     }}
                     type="button"
                   >
