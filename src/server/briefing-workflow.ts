@@ -6,6 +6,11 @@ import {
 import { collectBriefingCandidates } from './briefing-collection';
 import type { BriefingCompositionResult } from './briefing-composition';
 import type { PersonalBriefingAgent } from './preferences-agent';
+import {
+  createSearxngContainerFetcher,
+  searxngContainerBaseUrl,
+  type SearxngContainer,
+} from './searxng-container';
 
 /** Serializable parameters for one manually requested briefing workflow. */
 export type BriefingWorkflowParams = {
@@ -14,16 +19,11 @@ export type BriefingWorkflowParams = {
   date: string;
 };
 
-/**
- * Bindings used by the durable manual briefing workflow.
- *
- * SearXNG is off by default: collection runs the decoded Google News RSS channel
- * and GDELT. Setting `SEARXNG_BASE_URL` opts a local run back into a private
- * SearXNG instance; no container binding is required or deployed.
- */
+/** Local Docker or private production Container bindings for SearXNG discovery. */
 export type BriefingWorkflowEnv = {
   PERSONAL_BRIEFING: DurableObjectNamespace<PersonalBriefingAgent>;
   SEARXNG_BASE_URL?: string;
+  SEARXNG?: DurableObjectNamespace<SearxngContainer>;
 };
 
 /** Collects, composes, and atomically publishes one user-reserved briefing run. */
@@ -128,9 +128,18 @@ export class BriefingWorkflow extends WorkflowEntrypoint<
   }
 }
 
-/** Enables the SearXNG channel only when a local instance is explicitly set. */
+/** Prefers explicit local Docker configuration, otherwise uses the private Container. */
 function searchProviders(env: BriefingWorkflowEnv) {
-  return env.SEARXNG_BASE_URL === undefined
-    ? {}
-    : { searxng: { baseUrl: env.SEARXNG_BASE_URL, fetcher: fetch } };
+  if (env.SEARXNG_BASE_URL !== undefined)
+    return { searxng: { baseUrl: env.SEARXNG_BASE_URL, fetcher: fetch } };
+
+  if (env.SEARXNG !== undefined)
+    return {
+      searxng: {
+        baseUrl: searxngContainerBaseUrl,
+        fetcher: createSearxngContainerFetcher(env.SEARXNG),
+      },
+    };
+
+  return {};
 }

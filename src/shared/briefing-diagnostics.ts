@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+/** Persisted provenance vocabulary; only `searxng` is produced since DISC-10. */
 const provider = z.enum(['searxng', 'google-news', 'gdelt']);
 const topicId = z.string().min(1).max(64);
 

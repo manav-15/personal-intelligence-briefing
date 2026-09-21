@@ -91,6 +91,7 @@ export const briefingRunStatusSchema = z.enum([
 /** A persisted, attributable collection problem shown when a run cannot complete. */
 export const briefingRunFailureSchema = z.strictObject({
   stage: z.enum(['discovery', 'evidence', 'budget']),
+  // Persisted provenance vocabulary; only searxng is produced since DISC-10.
   provider: z.enum(['searxng', 'google-news', 'gdelt']).nullable(),
   message: z.string().trim().min(1).max(1_000),
 });

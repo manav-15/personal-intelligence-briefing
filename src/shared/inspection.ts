@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-/** Supported discovery channels across the Worker and content inspector. */
+/**
+ * Supported discovery channels across the Worker and content inspector. Google
+ * News and GDELT were retired with the SearXNG-only decision; their names stay
+ * parseable because stored candidates are re-read for retained runs.
+ */
 export const discoveryProviderSchema = z.enum([
   'google-news',
   'gdelt',

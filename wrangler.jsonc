@@ -27,12 +27,22 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api", "/api/*", "/agents", "/agents/*"],
   },
+  "containers": [
+    {
+      "class_name": "SearxngContainer",
+      "image": "./infra/searxng/Dockerfile",
+      "max_instances": 1,
+      "instance_type": "lite",
+    },
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "PERSONAL_BRIEFING", "class_name": "PersonalBriefingAgent" },
+      { "name": "SEARXNG", "class_name": "SearxngContainer" },
     ],
   },
   "exports": {
+    "SearxngContainer": { "type": "durable-object", "storage": "sqlite" },
     "PersonalBriefingAgent": { "type": "durable-object", "storage": "sqlite" },
   },
 }

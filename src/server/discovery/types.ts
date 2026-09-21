@@ -1,6 +1,3 @@
-/** Supported discovery providers; each implementation lives in its own file. */
-export type DiscoveryProvider = 'google-news' | 'gdelt' | 'searxng';
-
 /** A normalized lead; a source link alone does not establish article evidence. */
 export type { StoryCandidate, DiscoveryResult } from '../../shared/inspection';
 

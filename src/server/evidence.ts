@@ -43,48 +43,17 @@ async function resolveEvidence(
     return unavailable('The publisher link is not safe to fetch.');
   }
 
-  if (sourceUrl.hostname !== 'news.google.com') {
-    if (!isFetchablePublisherUrl(sourceUrl))
-      return unavailable('The publisher link is not safe to fetch.');
-
-    return retrievePublisherEvidence(sourceUrl, fetcher);
-  }
-  let redirect: Response;
-
-  try {
-    redirect = await fetcher(story.sourceUrl, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch {
-    return unavailable('The Google News link could not be resolved.');
-  }
-
-  const location = redirect.headers.get('location');
-
-  await redirect.body?.cancel();
-
-  if (!location)
-    return unavailable('Google News did not provide a publisher link.');
-
-  let articleUrl: URL;
-
-  try {
-    articleUrl = new URL(location, story.sourceUrl);
-  } catch {
-    return unavailable('Google News returned an invalid publisher link.');
-  }
-
-  if (articleUrl.hostname === 'news.google.com') {
+  // SearXNG hands back publisher links, so an aggregator redirect is never
+  // article evidence and must not be fetched as though it were one.
+  if (sourceUrl.hostname === 'news.google.com')
     return unavailable(
-      'Google News returned another Google link instead of a publisher URL.',
+      'The link is an aggregator redirect, not a publisher page.',
     );
-  }
 
-  if (!isFetchablePublisherUrl(articleUrl))
+  if (!isFetchablePublisherUrl(sourceUrl))
     return unavailable('The publisher link is not safe to fetch.');
 
-  return retrievePublisherEvidence(articleUrl, fetcher);
+  return retrievePublisherEvidence(sourceUrl, fetcher);
 }
 
 async function retrievePublisherEvidence(
