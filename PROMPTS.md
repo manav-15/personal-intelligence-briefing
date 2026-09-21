@@ -1638,3 +1638,21 @@ update the backlog row, implementation plan, architecture note, README and deplo
 coalescing inside one transaction), and migration 10 are wired to the Worker's `scheduled` export with
 `"triggers": { "crons": ["*/15 * * * *"] }`. Manual generation is untouched. Verified with `npm run check` (228 tests
 across 22 files) and a locally triggered tick, since `wrangler dev` does not fire cron on its own.
+
+### Chat owner resolved instead of hardcoded (2026-09-21)
+
+**User instruction (verbatim):** "Stop hardcoding single-user in onChatMessage / useAgent. Even if the product
+stays one shared dataset, the chat path should use the same owner the HTTP routes already resolve."
+
+**Material coding prompt:** Resolve the owner from the Agent's own Durable Object name inside `onChatMessage`,
+expose the resolved owner to the browser through an authenticated route, and make `useAgent` address that owner
+instead of the literal.
+
+**Outcome:** `onChatMessage` now reads `ctx.id.name` — the name the Worker's routes and the cron tick both address
+through `idFromName(userId)` — and uses it for the session, briefing, evidence, transcript and turn writes, so a
+conversation belonging to another owner is refused instead of read. A new `GET /api/identity` route (identity →
+origin → method, `no-store` on the successful read) returns `{ userId }`, and the chat screen resolves it before
+mounting the transport, because `useAgent` would otherwise connect to the `default` instance. Setting
+`PRIMARY_USER_ID=owner-1` on a local Worker now yields `/api/identity → owner-1`, a 101 handshake on
+`/agents/personal-briefing/owner-1`, and a 404 on the previously hardcoded `single-user` path; a browser chat turn
+returned a cited answer. `npm run check` passes with 230 tests.

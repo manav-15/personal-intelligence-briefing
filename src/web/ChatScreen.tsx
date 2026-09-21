@@ -15,9 +15,57 @@ import {
   readArchivedBriefing,
   readTodayBriefing,
 } from './briefings-client';
+import { readOwnerId } from './identity-client';
 
-/** Renders source-grounded conversations that remain available after a browser reload. */
+/**
+ * Renders source-grounded conversations that remain available after a browser reload.
+ *
+ * The transport cannot start before the Worker's resolved owner is known: an
+ * unnamed connection would address a different Durable Object instance.
+ */
 export function ChatScreen() {
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ownerFailed, setOwnerFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    void readOwnerId()
+      .then((resolved) => {
+        if (active) setOwnerId(resolved);
+      })
+      .catch(() => {
+        if (active) setOwnerFailed(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (ownerFailed)
+    return (
+      <section className="chat-screen" role="alert">
+        <h1>Couldn’t start chat</h1>
+        <p>Return to Today, then try Chat again.</p>
+      </section>
+    );
+
+  if (ownerId === null)
+    return (
+      <section className="chat-screen" aria-busy="true">
+        <p className="eyebrow" role="status">
+          Connecting to your briefing…
+        </p>
+        <h1>Ask about your briefing</h1>
+      </section>
+    );
+
+  return <ChatConversation ownerId={ownerId} />;
+}
+
+/** Owns the Agent transport for one resolved owner. */
+function ChatConversation({ ownerId }: { ownerId: string }) {
   const [briefing, setBriefing] = useState<Briefing | null | undefined>(
     undefined,
   );
@@ -31,7 +79,7 @@ export function ChatScreen() {
   const [changingConversation, setChangingConversation] = useState(false);
   const actionVersion = useRef(0);
   const actionPending = useRef(false);
-  const agent = useAgent({ agent: 'personal-briefing', name: 'single-user' });
+  const agent = useAgent({ agent: 'personal-briefing', name: ownerId });
   const {
     isRecovering,
     isStreaming,

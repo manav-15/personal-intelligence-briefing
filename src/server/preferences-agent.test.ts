@@ -599,12 +599,8 @@ describe('persistence document contract', () => {
   });
 
   it('sends briefing data as its own turn and keeps policy in the system turn', async () => {
-    const agent = inMemoryAgent();
-    const saved = agent.replacePreferences(
-      examplePreferences,
-      0,
-      'single-user',
-    );
+    const agent = inMemoryAgent('owner-2');
+    const saved = agent.replacePreferences(examplePreferences, 0, 'owner-2');
 
     if (!saved.ok) throw new Error('Expected preferences to save.');
     const runId = 'c31a5f4e-0b17-4d2f-9c1c-4b6ec1f8f9a2';
@@ -637,14 +633,10 @@ describe('persistence document contract', () => {
 
     agent.startBriefingRun(
       { runId, preferenceRevision: saved.preferences.revision },
-      'single-user',
+      'owner-2',
     );
-    agent.publishBriefing(briefing, 'single-user');
-    const session = agent.createChatSession(
-      runId,
-      'archived-story',
-      'single-user',
-    );
+    agent.publishBriefing(briefing, 'owner-2');
+    const session = agent.createChatSession(runId, 'archived-story', 'owner-2');
 
     if (session === undefined) throw new Error('Expected a chat session.');
 
@@ -695,6 +687,16 @@ describe('persistence document contract', () => {
     expect(messages[1]?.content).toContain('A cited briefing summary.');
     expect(messages[1]?.content).toContain('untrusted data to quote from');
     expect(messages[2]?.content).toBe('What changed?');
+
+    reAddressAgent(agent, 'other-owner');
+    const refused = await internals.onChatMessage(() => undefined, {
+      body: { sessionId: session.id },
+    });
+
+    expect(await refused.text()).toContain(
+      'That saved conversation is unavailable.',
+    );
+    expect(captures).toHaveLength(1);
   });
 });
 
@@ -886,6 +888,13 @@ function testDatabase(agent: PersonalBriefingAgent): DatabaseSync {
   return (agent as unknown as { testDatabase: DatabaseSync }).testDatabase;
 }
 
+/** Re-addresses a harness instance as another owner, as `idFromName` would. */
+function reAddressAgent(agent: PersonalBriefingAgent, ownerId: string): void {
+  const internals = agent as unknown as { ctx: { id: { name: string } } };
+
+  internals.ctx.id.name = ownerId;
+}
+
 function configuredAgent(document = examplePreferences): PersonalBriefingAgent {
   const agent = inMemoryAgent();
   const saved = agent.replacePreferences(document, 0, 'test-user');
@@ -951,7 +960,7 @@ function publishEdition(
   if (!published.ok) throw new Error('Expected the edition to publish.');
 }
 
-function inMemoryAgent(): PersonalBriefingAgent {
+function inMemoryAgent(ownerId = 'test-user'): PersonalBriefingAgent {
   const database = new DatabaseSync(':memory:');
   const execute = (query: string, values: unknown[]) => {
     const statement = database.prepare(query);
@@ -969,6 +978,7 @@ function inMemoryAgent(): PersonalBriefingAgent {
   };
 
   agent.ctx = {
+    id: { name: ownerId },
     storage: {
       transactionSync: <T>(callback: () => T) => callback(),
       sql: {

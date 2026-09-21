@@ -61,12 +61,22 @@ adds `briefing_runs.trigger` with `'manual'` as the default for existing rows, s
 manual and scheduled runs remain distinguishable; manual generation is otherwise
 unchanged and may still publish a second edition on a date that already has one.
 
+Chat no longer assumes an owner. `onChatMessage` resolves the owner from the
+Durable Object's own instance name — the name the Worker's routes and the cron
+tick both address through `idFromName(userId)` — and refuses a conversation that
+belongs to anyone else. The browser reads the same value from the new
+authenticated `GET /api/identity` route and only then mounts the Agent transport,
+because an unnamed connection would address the `default` instance. Both halves
+previously used the literal `single-user`, which broke the WebSocket handshake as
+soon as `PRIMARY_USER_ID` pinned a different owner.
+
 ### Validation already performed
 
 - Current working tree: the complete `npm run check` gate passes on Node 24 —
-  formatting, lint, strict type checks, 228 tests across 22 files, and the
-  production build. The earlier states recorded 224 tests (security-only) and 220
-  tests (before the provider removal); the drop is the deleted Google News,
+  formatting, lint, strict type checks, 230 tests across 22 files, and the
+  production build. The earlier states recorded 228 tests (scheduled briefing),
+  224 (security-only) and 220 (before the provider removal); the drop before 224
+  is the deleted Google News,
   decoder, GDELT and mixed legacy test files, offset by publisher-evidence cases
   moved into `evidence.test.ts` and the chat-boundary and composition cases added
   since.
@@ -83,6 +93,18 @@ unchanged and may still publish a second edition on a date that already has one.
   scheduled one. `index.test.ts` calls `worker.scheduled` with an empty
   environment and gets `agent-unavailable`, which proves the tick needs no
   request identity.
+- Chat owner resolution: `routes.test.ts` pins `GET /api/identity` to the
+  resolved owner (`single-user` locally, `PRIMARY_USER_ID` when set), with 401
+  without identity, 403 cross-origin, and the same method/cache contract as the
+  other routes. `preferences-agent.test.ts` runs the chat turn on an instance
+  addressed as `owner-2` — the previous `single-user` literal would have refused
+  the session — and asserts that re-addressing the same instance as another owner
+  refuses the conversation without calling the model. Live checks: with
+  `PRIMARY_USER_ID=owner-1`, `/api/identity` returned `owner-1`, the
+  `/agents/personal-briefing/owner-1` handshake answered 101, and
+  `/agents/personal-briefing/single-user` answered 404. In the browser against the
+  local Worker, the chat screen opened, started a saved conversation, and returned
+  a cited answer, and the throwaway conversation was deleted afterwards.
 - Live local scheduled path: a tick is triggered with
   `GET /cdn-cgi/handler/scheduled?cron=*/15 * * * *` under
   `wrangler dev --test-scheduled`, because dev never fires cron on its own. In a
@@ -671,6 +693,21 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Removed the hardcoded chat owner at the owner's direction. The
+  chat path assumed `single-user` in two places: `onChatMessage` read sessions,
+  briefings, evidence, and the model transcript under that literal, and the
+  browser opened its Agent transport with `name: 'single-user'`. Setting
+  `PRIMARY_USER_ID` therefore broke chat twice over — the Agent route rejected the
+  handshake, and the Agent itself would have read another owner's rows. The Agent
+  now resolves the owner from its own Durable Object name, which is the name the
+  routes and the cron tick already address through `idFromName(userId)`, and
+  refuses a conversation that is not that owner's. The browser reads the resolved
+  owner from the new authenticated `GET /api/identity` route and mounts the
+  transport only once it is known, because an unnamed connection would address the
+  `default` instance. Verified by the full `npm run check` gate (230 tests), by a
+  live `PRIMARY_USER_ID=owner-1` Worker whose resolved-owner handshake answered 101
+  while the old `single-user` path answered 404, and by a browser chat turn that
+  returned a cited answer.
 - **2026-09-21:** Implemented SCHED-01: a `*/15 * * * *` Worker cron reserves and
   launches the daily briefing with no HTTP and no Access. The Agent decides
   due-ness from the saved `{ localTime, timezone }` (due until local midnight),

@@ -136,7 +136,8 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         'Choose a saved conversation before asking a follow-up.',
       );
 
-    const session = this.readChatSession(request.sessionId, 'single-user');
+    const userId = this.ownerId();
+    const session = this.readChatSession(request.sessionId, userId);
 
     if (session === undefined)
       return new Response(
@@ -148,15 +149,11 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     if (question === null)
       return new Response('Your question was not available. Please try again.');
 
-    this.appendChatMessage(session.id, question, 'single-user');
+    this.appendChatMessage(session.id, question, userId);
     const context = buildBriefingChatContext(
-      this.readBriefingByRun(session.briefingRunId, 'single-user'),
+      this.readBriefingByRun(session.briefingRunId, userId),
       session.storyId,
-      this.readBriefingEvidence(
-        session.briefingRunId,
-        session.storyId,
-        'single-user',
-      ),
+      this.readBriefingEvidence(session.briefingRunId, session.storyId, userId),
     );
 
     if (context === null) {
@@ -180,7 +177,7 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
       max_tokens: 650,
       messages: buildChatMessages(
         context,
-        this.readChatMessages(session.id, 'single-user', 12),
+        this.readChatMessages(session.id, userId, 12),
       ),
       temperature: 0,
     });
@@ -192,7 +189,7 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     this.appendChatMessage(
       session.id,
       { id: crypto.randomUUID(), role: 'assistant', content },
-      'single-user',
+      userId,
     );
     logEvent('chat.answered', {
       sessionId: session.id,
@@ -202,6 +199,23 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     });
 
     return new Response(content);
+  }
+
+  /**
+   * Owner id this Agent instance was addressed by.
+   *
+   * The Worker's routes and its scheduled tick both use `idFromName(userId)`, so
+   * the Durable Object name is the owner every HTTP route already resolved.
+   */
+  private ownerId(): UserId {
+    const name = this.ctx.id.name;
+
+    if (name === undefined || name === '')
+      throw new Error(
+        'The personal briefing Agent must be addressed by owner name.',
+      );
+
+    return name;
   }
 
   /** Creates a durable conversation after verifying that its cited story belongs to the user. */

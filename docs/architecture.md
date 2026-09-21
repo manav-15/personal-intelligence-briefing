@@ -42,6 +42,13 @@ Conversation actions are serialized and stale refreshes cannot replace the
 selected conversation's transcript. The shared origin policy also protects Agent
 HTTP and WebSocket routing.
 
+Chat uses the owner the Worker resolved, not a fixed name. `onChatMessage` reads
+the Durable Object's own instance name (`idFromName(userId)` is what both the
+routes and the cron tick address), and the browser reads the same value from
+`GET /api/identity` before it opens the transport — an unnamed or guessed
+connection would address a different instance and be refused by the Agent route's
+owner check.
+
 The historical sections below explain previous increments. Current validation
 and review status are in `implementation-plan.md`; actionable work lives only in
 the improvement backlog in `data-pipeline.md`.
@@ -73,6 +80,10 @@ Guard order is part of the contract:
   16,000-byte limit → JSON parsing and shared schema validation. Unknown children
   retain those guards; the bare `/api/inspection` mount remains a plain JSON 404.
 - Health: method check followed by a successful `no-store` response.
+- Identity (added 2026-09-21): identity → origin → method → the resolved owner id
+  as JSON. Only the successful read receives `no-store`. This is the only route
+  that tells the browser which owner it resolved to, so the chat transport can
+  address its own Agent instance instead of assuming one.
 - Feasibility (updated 2026-09-21): `no-store` → local inspection flag →
   identity → origin → method → provider validation → bounded discovery/evidence.
   Disabled diagnostics return 404 before validation or outbound requests.

@@ -197,6 +197,7 @@ describe('HTTP policy compatibility', () => {
       null,
     ],
     ['/api/inspection/search', 'GET', 'no-store'],
+    ['/api/identity', 'GET', null],
     ['/api/inspection/evidence', 'POST', 'no-store'],
     ['/api/feasibility/discovery', 'GET', 'no-store'],
     ['/api/briefings/today', 'GET', 'no-store'],
@@ -246,6 +247,30 @@ describe('HTTP policy compatibility', () => {
       expect(replacePreferences).not.toHaveBeenCalled();
     },
   );
+
+  it('reports the owner the Worker resolved, and only that', async () => {
+    const local = await app.fetch(new Request(origin + '/api/identity'), env);
+    const configured = await app.fetch(new Request(origin + '/api/identity'), {
+      ...env,
+      PRIMARY_USER_ID: 'owner-1',
+    });
+    const unauthenticated = await app.fetch(
+      new Request(origin + '/api/identity'),
+      { ...env, PREFERENCES_DIAGNOSTICS_ENABLED: undefined },
+    );
+    const crossOrigin = await app.fetch(
+      new Request(origin + '/api/identity', {
+        headers: { Origin: 'https://other.test' },
+      }),
+      env,
+    );
+
+    expect(await local.json()).toEqual({ userId: 'single-user' });
+    expect(local.headers.get('Cache-Control')).toBe('no-store');
+    expect(await configured.json()).toEqual({ userId: 'owner-1' });
+    expect(unauthenticated.status).toBe(401);
+    expect(crossOrigin.status).toBe(403);
+  });
 
   it('keeps durable chat-session routes owner-scoped, validated, and non-cacheable', async () => {
     const list = await app.fetch(new Request(origin + '/api/chats'), env);

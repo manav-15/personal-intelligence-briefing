@@ -82,7 +82,9 @@ Content lab is a local inspection tool. `/api/inspection/*` and
 `/api/feasibility/*` require the inspection flag; feasibility additionally requires
 identity. Deployment leaves diagnostic flags unset. Agent routes validate the
 personal-briefing binding and resolved owner for every suffix and reject foreign
-origins, including WebSocket handshakes.
+origins, including WebSocket handshakes. The chat screen reads that owner from
+`GET /api/identity` and addresses its own Agent instance with it, so setting
+`PRIMARY_USER_ID` does not require a code change.
 
 ## Validation
 
