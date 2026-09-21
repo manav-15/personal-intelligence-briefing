@@ -1,5 +1,40 @@
 # Architecture decisions
 
+## Current implementation (2026-09-21)
+
+This section supersedes the historical provider and scheduling decisions below.
+The current pipeline uses SearXNG exclusively. Local development supplies a
+loopback Docker URL; production configuration supplies a private Container
+binding. Both use the same pinned image and settings. The Worker is the only
+production caller, and public Agent routing rejects the Container binding.
+Multiple SearXNG engines provide redundancy; useful results survive individual
+engine failures and raw failure diagnostics are preserved. The Google News RSS
+and GDELT adapters, the Google publisher-link decoder, and their verification
+scripts were removed on 2026-09-21: SearXNG is the only discovery provider, and
+the local feasibility probe now exercises it instead of a retired channel. An
+aggregator redirect link is never treated as article evidence.
+
+Generation is manual in the submission scope (SCHED-01 deferred). The Agent owns
+preferences, editions, retained evidence and conversations; the Workflow handles
+bounded collection, composition and atomic publication. The private Container
+configuration is implemented locally but is not yet deployed or hosted-verified
+(DISC-10 / DEPLOY-01).
+
+Chat history selects recent rows before reversing them into chronological order:
+12 for model context and 200 for the displayed transcript. Older records remain
+stored; pagination and further UI verification are tracked under CHAT-02.
+A chat turn is sent as system policy, then the story as one untrusted JSON data
+block, then the transcript ending at the current question. Article text, the
+briefing summary, and the question never enter the system message, and JSON
+escaping stops source text from forging a role or turn boundary.
+Conversation actions are serialized and stale refreshes cannot replace the
+selected conversation's transcript. The shared origin policy also protects Agent
+HTTP and WebSocket routing.
+
+The historical sections below explain previous increments. Current validation
+and review status are in `implementation-plan.md`; actionable work lives only in
+the improvement backlog in `data-pipeline.md`.
+
 ## Initial shape
 
 One Worker serves the React assets and first-party routes. A single personal
@@ -26,9 +61,12 @@ Guard order is part of the contract:
   16,000-byte limit → JSON parsing and shared schema validation. Unknown children
   retain those guards; the bare `/api/inspection` mount remains a plain JSON 404.
 - Health: method check followed by a successful `no-store` response.
-- Feasibility: method → provider validation → `no-store` → bounded discovery and
-  evidence. Its existing endpoint has no diagnostic flag; this refactor does not
-  broaden or restrict it. Production authentication remains deferred.
+- Feasibility (updated 2026-09-21): `no-store` → local inspection flag →
+  identity → origin → method → provider validation → bounded discovery/evidence.
+  Disabled diagnostics return 404 before validation or outbound requests.
+- Agent transport (updated 2026-09-21): identity → origin → exact binding and
+  resolved owner check on every subpath → SDK dispatch. The SDK owns supported
+  transport suffixes; adding a suffix never bypasses the owner check.
 
 Explicit raw-method checks reject HEAD and OPTIONS with 405 and `Allow`;
 Hono's implicit HEAD-to-GET dispatch cannot trigger a GET handler. HEAD responses
@@ -75,6 +113,11 @@ separate files under `src/server/discovery`, with shared normalized contracts
 and a small barrel entrypoint; there is no plugin registry. Article retrieval is a separate
 module: discovery links alone are not evidence for claims.
 
+> Superseded on 2026-09-21: SearXNG is the only provider. The Google News RSS and
+> GDELT adapters, their decoder, their verification scripts, and the Google
+> redirect branch of evidence retrieval were deleted. The paragraphs below keep
+> the measurements that motivated the decision.
+
 GDELT uses one English-language article-list query over the past week, bounded
 to 25 results, 750 KB, and a 10-second timeout. Rate limits are explicit
 recoverable failures; this adapter does not retry. GDELT's indexing `seendate`
@@ -116,8 +159,17 @@ exclusions, and effective presentation/source settings. Publisher URLs are
 removed before the request. The response may select only those IDs and returns
 bounded assessment components (`topicFit`, `briefingValue`, and `novelty`),
 presentation copy, and an optional supported update reference. Code computes
-the aggregate score, rejects scores below 70, invalid IDs, repeated candidates,
-unsupported updates, and groups whose effective topic profiles differ. It then
+the aggregate score, and rejects scores below 70, repeated candidates,
+unsupported updates, and groups whose effective topic profiles differ.
+
+Rejection is now per selection and disclosed: an item that contradicts the
+request or the supplied candidates is discarded while the rest of the draft
+publishes, and the edition carries one `composition-rejected` limitation naming
+the reason in plain language. Only unparseable model output, an empty candidate
+set, or a draft with no usable story fails the run, and that failure message
+names the discards. A model that returns more items than the story limit now has
+its lowest-relevance surplus dropped with a `story-budget` limitation instead of
+losing the edition. It then
 derives topic IDs, dates, source URLs, publishers, citations, completeness, and
 provenance from trusted stored inputs.
 
@@ -217,11 +269,11 @@ which keeps local content-quality checks representative of the deployed search
 configuration. Container disk/cache is not application memory; durable app
 state continues to live in the personal Agent's SQLite database.
 
-The provider is now available to bounded collection as the first channel when
+The provider is now available to bounded collection as the only channel when
 this binding is supplied by the generation Workflow. For local development,
 the same Workflow uses the loopback `SEARXNG_BASE_URL` binding when configured;
-the private Container remains the deployed path. Google News RSS and GDELT
-remain bounded fallbacks. The bounded scheduler now rotates topics and providers; see
+the private Container remains the deployed path. Google News RSS and GDELT were
+retired with the SearXNG-only decision. The bounded scheduler rotates topics and providers; see
 [DISC-07](data-pipeline.md#9-improvement-backlog).
 
 ## Local inspection integration
@@ -229,7 +281,7 @@ remain bounded fallbacks. The bounded scheduler now rotates topics and providers
 The React content lab calls `GET /api/inspection/search`, then explicitly
 requests one candidate through `POST /api/inspection/evidence`. Search does
 not automatically fetch publishers. Shared Zod contracts validate both edges.
-The SearXNG provider is a separate file alongside Google News and GDELT.
+The SearXNG provider is the only implementation in `src/server/discovery`.
 Requests, response bytes, candidate counts, and extraction lengths are bounded.
 Partial engine failures remain visible alongside successful results.
 

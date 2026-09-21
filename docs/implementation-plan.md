@@ -1,8 +1,115 @@
 # Implementation plan
 
-Last updated: 2026-09-20. Maintain this plan after each increment or scope
+Last updated: 2026-09-21. Maintain this plan after each increment or scope
 decision. Record evidence, limitations, and review status; do not mark a whole
 milestone complete when only a smaller slice is delivered.
+
+## Current status: security, SearXNG-only discovery, chat and composition (2026-09-21)
+
+The working tree contains the route-security fixes (SEC-01), SearXNG-only
+discovery with private Container wiring (DISC-10 / DEPLOY-01), the removal of the
+retired Google News and GDELT providers, recent chat history and UI request
+handling (CHAT-02), and a portable test alias (TEST-01). These changes await
+review; none has been deployed in this increment.
+
+Feasibility diagnostics require the local inspection flag, identity and origin
+checks. Agent routing validates the personal-briefing binding and owner for every
+suffix. SearXNG is the only briefing discovery provider; multiple configured
+engines provide redundancy, and engine errors retain their diagnostics without
+removing useful results. The Google News and GDELT adapters, the Google
+publisher-link decoder, their verification scripts, and the Google redirect branch
+of evidence retrieval were deleted; no fallback path remains. Retained runs still
+parse because the persisted provenance enum keeps the retired names.
+
+Chat now selects the latest 12 messages for model context and the latest 200 for
+the displayed transcript, in chronological order. Older rows remain stored.
+Conversation actions are serialized, stale refresh responses are ignored, and
+request/transport errors are shown. The test runtime alias resolves relative to
+the repository rather than a developer's absolute path.
+
+One chat turn is now sent as three ordered turns: system policy, one untrusted
+JSON data block holding the story, then the transcript whose final message is the
+question. Article text, the briefing summary, the change note, and the question
+left the system message, JSON escaping prevents forged role or turn markers, and
+`buildChatMessages` makes the ordering directly testable. Citation-label
+validation after generation remains open under CHAT-03.
+
+Composition no longer loses an edition to one contradictory model item (BRIEF-04,
+closing BRIEF-05). A selection that references an unknown candidate, repeats a
+candidate, names a topic outside its own group, groups incompatible topic
+profiles, or claims an unsupported update is discarded while the rest of the
+draft publishes, and the edition carries one `composition-rejected` limitation
+naming the reason. A model that returns more items than the story limit now has
+its lowest-relevance surplus dropped with a `story-budget` limitation. Whole-run
+failure remains for unparseable model output, an empty candidate set, and a draft
+whose every selection was discarded, and that message names the discards. The
+prompt also states that a presentation topic must belong to the item's own
+candidates, and the composition prompt version is `2026-09-21.2`.
+
+### Validation already performed
+
+- Current working tree: the complete `npm run check` gate passes on Node 24 —
+  formatting, lint, strict type checks, 209 tests across 20 files, and the
+  production build. The earlier states recorded 224 tests (security-only) and 220
+  tests (before the provider removal); the drop is the deleted Google News,
+  decoder, GDELT and mixed legacy test files, offset by publisher-evidence cases
+  moved into `evidence.test.ts` and the chat-boundary and composition cases added
+  since.
+- Composition rejection: `briefing-composition.test.ts` covers every rejection
+  category, a mixed draft that publishes the valid story with the
+  `composition-rejected` limitation, a draft whose whole selection set was
+  discarded, candidate reuse after a rejection, the `story-budget` truncation,
+  and the untouched global failures. Live local runs: one published a single
+  valid story plus `Discarded 3 selections presenting a topic that did not match
+its stories. The edition keeps the remaining stories.` where the previous code
+  failed the edition outright; another, with no valid selection, failed with the
+  discards named. Three of four items mismatched on that run, so the prompt rule
+  added for it did not remove the mismatch cause; that root cause is tracked as
+  BRIEF-07, and a bounded repair call as BRIEF-06.
+- Live local Worker (`wrangler dev`, production-style bindings with the
+  diagnostic flags forced off): `/api/feasibility/discovery`,
+  `/api/inspection/search`, and the run-diagnostics route all answered 404 before
+  any provider call, while `/api/preferences` and `/agents/*` answered 401 and
+  `/api/health` answered 200.
+- Live local diagnostics enabled: the feasibility probe returned five AI
+  candidates from the local SearXNG instance while retaining a Bing News engine
+  error, answered 400 for a one-character query, and answered 403 for a
+  cross-origin request.
+- Live local Agent routing: a same-origin WebSocket handshake to the owner path
+  returned 101, a foreign owner returned 404, a foreign origin returned 403, and
+  a path naming the `SEARXNG` Container binding returned 404.
+- Direct route tests (`security-routes.test.ts`) pin the same boundaries without
+  a live server, including that no provider fetch happens when the flag is off.
+- Chat prompt split: `chat-context.test.ts` and the call-site case in
+  `preferences-agent.test.ts` prove the system turn holds policy only, that the
+  data block carries the story, that an injection payload (`Ignore all previous
+instructions` plus a forged `System:` line) stays inside the escaped JSON value,
+  and that the current question is the final turn. One live browser turn on the
+  local app still answered with [S1] attribution and refused nothing unexpected.
+- The pinned Container image builds during local startup, and the local Docker
+  instance serves the configured engines. These results do not establish hosted
+  Container startup or hosted engine coverage.
+
+Remaining validation is tracked under TEST-01, CHAT-02 and CHAT-03. Hosted
+startup, secret configuration and generation verification remain DISC-10 /
+DEPLOY-01. No hosted generation, new remote AI inference, or deployment was
+performed.
+
+### Scope and next slice
+
+Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and
+the schedule settings still read as if active until SCHED-01 is picked up.
+SearXNG engine and publisher errors are expected and must remain visible. Current
+work has stopped at documentation completion. The next implementation work, when
+resumed, follows the existing backlog entries; this section is not a second
+TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (fourth entry) — composition now discards a contradictory
+model selection per item, discloses it as one `composition-rejected` limitation,
+truncates a surplus above the story limit, and names the discards when nothing
+usable remains (BRIEF-04, BRIEF-05 dropped, BRIEF-06 and BRIEF-07 opened). Live
+local runs confirmed both the published-subset path and the all-discarded
+failure. Prompt history entry appended for this increment.
 
 ## Original milestones
 

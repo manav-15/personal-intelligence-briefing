@@ -1,12 +1,17 @@
 # Discovery link verification
 
+> Retired on 2026-09-21. The Google News and GDELT adapters, the decoder they
+> justified, and the `verify:google-links` and `verify:search-links` scripts were
+> deleted with the SearXNG-only decision (DISC-08/DISC-09). This document is kept
+> as the record of how those providers behaved; the commands below no longer run.
+
 These scripts are experiments, not application code. They provide a reproducible
 way to decide whether a discovery service gives a canonical publisher URL that
 the evidence module can retrieve.
 
-The Google News sequence documented below is implemented in the Worker as
-`src/server/discovery/google-news-decoder.ts` under backlog item DISC-08; this
-script remains the standalone reproducibility check.
+The Google News sequence documented below was implemented in the Worker as
+`src/server/discovery/google-news-decoder.ts` under backlog item DISC-08 until
+that module was removed.
 
 Run them with Node 24:
 

@@ -19,7 +19,7 @@ JSON and HTML formats are enabled. Search uses Bing News, DuckDuckGo News, and
 Reuters. SearXNG's Google News and Brave News engines are **disabled**: the
 Google engine is CAPTCHA-suspended and Brave's news results arrive without
 publication dates, which the briefing's freshness gate cannot use. Google News
-RSS remains the application's separate discovery adapter. Brave's web engine
+RSS and GDELT are not used by the briefing collection pipeline. Brave's web engine
 stays defined and disabled because the news engine shares its parent network
 configuration and startup fails without it. This private instance has no limiter
 or public bot detection, so it does not need Valkey. The same pinned image and
@@ -48,8 +48,7 @@ search response, then tries up to six publisher links sequentially until it
 finds paragraph text. Each response is capped at 500 KB; publisher retrieval
 has a 15-second timeout and five redirects. It prints original/final URLs,
 engine failures, paragraph counts, and a text sample for manual inspection.
-It does not store full articles or application data. No Worker provider was
-added in this increment.
+It does not store full articles or application data. The Worker uses the SearXNG provider for briefing collection.
 
 To test a single topic or change the cap (maximum ten):
 

@@ -1448,3 +1448,52 @@ code-owned sources aside remains the UI's provenance surface. Verified in the br
 that a story-fact answer still carries [S1] and a knowledge answer is unlabelled with
 no label added. Prompt policy version 2026-09-21.4; recorded the resulting
 instruction-dependence in CHAT-01.
+
+### Untrusted chat context separated from system policy, chat increment (2026-09-21)
+
+**User instruction (verbatim):** "Give me a plan for untrsuted context in system prompt fix"
+
+**Follow-up instruction (verbatim):** "implement"
+
+**Material coding prompt:** Send a chat turn as system policy, then the selected story
+as one untrusted JSON data block, then the transcript ending at the current question.
+Policy stays in the system message; article text, the briefing summary, the change note
+and the user's question must never enter it. JSON-escape the data so source text cannot
+forge a role or turn boundary, and make turn assembly a pure exported function so the
+ordering is testable.
+
+**Outcome:** `chat-context.ts` now returns `{ item, system, context }` and exposes
+`buildChatMessages`, which emits `system` policy, one `user` turn carrying
+`untrustedContextLead` plus the serialized block, then the transcript. The question
+parameter left `buildBriefingChatContext`, and `preferences-agent.ts` sends the built
+array to Workers AI. Prompt policy version is 2026-09-21.5. Tests cover policy-only
+system content, ordering, escaping of an `Ignore all previous instructions` payload with
+a forged `System:` line, per-source text bounds, and the call-site message array; one
+live browser turn still answered with [S1] attribution. `npm run check` passes with 205
+tests. Remaining citation-label validation is tracked as CHAT-03.
+
+### Per-item composition rejection instead of whole-run failure, briefing increment (2026-09-21)
+
+**User instruction (verbatim):** "Fix: Reject invalid items individually and publish a valid subset with an explicit limitation, or allow one bounded repair attempt. Keep whole-run failure for globally invalid output or no usable stories."
+
+**Material coding prompt:** Turn every item-level materialization guard into a
+disclosed rejection so one contradictory model selection cannot lose the edition,
+keep whole-run failure for unparseable output or no usable stories, and truncate a
+surplus above the story limit.
+
+**Outcome:** `materializeItem` returns an `ItemOutcome` union and
+`materializeUpdate` an ok/rejection result, so an unknown candidate reference, a
+repeated candidate, a mismatched presentation topic, incompatible topic profiles,
+an unsupported update, an unknown prior reference, or an empty summary discards
+that selection only. The draft publishes the remaining stories with one
+`composition-rejected` limitation naming the reasons in plain language, and the
+failure path names the discards when nothing usable remains. `story-budget`
+replaces the former hard failure when the model returns more items than the story
+limit. A dead citation-budget guard was removed: the model schema already caps
+`candidateIds` at 10. A prompt rule tying `presentationTopicId` to the item's own
+candidates was added (prompt version 2026-09-21.2). Live local runs showed the new
+behaviour in both directions: one edition published its one valid story with the
+discard limitation where the old code failed, and one run with no valid selection
+failed naming the discards — but 3 of 4 items still mismatched, so the mismatch
+root cause is now BRIEF-07 and the optional repair call BRIEF-06. `npm run check`
+passes with 209 tests.

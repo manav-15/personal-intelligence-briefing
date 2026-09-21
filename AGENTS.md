@@ -42,8 +42,11 @@ Use React + TypeScript + Vite with Cloudflare Workers Static Assets. The
 personal Agent owns preferences, chat, briefing history, covered stories, and
 run state in Durable Object SQLite. A Workflow owns briefing generation.
 
-Use Google News RSS as the first discovery provider behind a replaceable
-adapter, with GDELT as a second channel. Keep providers in separate files under
+Use SearXNG as the single discovery provider: the private Container in
+production, loopback Docker locally, with several engines supplying redundancy
+and individual engine failures retained as diagnostics (DISC-10). The Google
+News RSS and GDELT adapters were removed, so a failed search service fails the
+run instead of silently switching providers. Keep providers in separate files under
 `src/server/discovery`, sharing normalized contracts through its entrypoint.
 Discovery links are not enough evidence for detailed summaries: use
 bounded article retrieval, store citations/metadata/provenance rather than full
