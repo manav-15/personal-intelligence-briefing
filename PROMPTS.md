@@ -1733,3 +1733,39 @@ controls, working drawer and delete flows, and assistant text width 262px → 31
 at 390px. That pass caught a story-picker grid overflow at 320–430px, fixed with
 `minmax(0, 1fr)` tracks and `min-width: 0`. Increments 2 and 3 remain open as
 UX-08 and UX-09.
+
+### Mobile chat scroll model, composer and touch (2026-09-21)
+
+**User instruction (verbatim, excerpt from the approved plan):** "2. Keep
+messages and input within reach. Give mobile chat a viewport-fitting layout:
+compact header at the top, one scrolling message area, and the composer at the
+bottom. Account for the on-screen keyboard and device safe areas so the input and
+Send button remain visible. Start the textarea at one or two lines, growing to a
+bounded height. Follow incoming messages only when the reader is near the bottom;
+otherwise show a Jump to latest control. 3. Polish reading and touch
+interactions. Reduce nested padding and let messages use more of the screen
+width. Wrap long URLs and headlines without horizontal scrolling. Use at least
+16px input text and 44px touch targets. Move Delete into conversation actions,
+away from Send. Hide desktop shortcut hints on touch screens and support newline
+entry without accidental submission, while retaining desktop keyboard behavior."
+
+**User instruction (verbatim):** "The chat should have a different scroll then
+the overall pafe. when the cursor is inside the chat screen, scroll should happen
+inside the chat window with no stickiness needed since messages are not streamed.
+Just implement this - do not commit"
+
+**Outcome:** The chat screen now owns the viewport: `main` is a viewport-height
+column when it holds the chat screen, the transcript is the only scroll region
+(`overscroll-behavior: contain`), the page does not scroll, and nothing is
+sticky. `src/web/chat-scroll.ts` decides following from the distance to the end
+(120px threshold) with tests for the boundary, a short transcript, growth under a
+reader at the end, a reader who scrolled away, and resuming; `chat-viewport.ts`
+restarts following per conversation and re-aligns through a ResizeObserver as the
+composer grows. The composer starts at one line and grows to 8.5rem, the label is
+screen-reader-only, and the shortcut hint follows the input device (Enter sends on
+a fine pointer, Return inserts a newline on a coarse one). Form controls render at
+1rem and buttons carry a 44px minimum. The shell footer is hidden on the chat
+screen. Verified geometrically in the local Worker at five viewport sizes,
+including wheel scrolling, follow, Jump to latest, coarse-pointer Return, and the
+other five routes at 320px; screenshot capture failed in the environment, which is
+recorded as a limitation. `npm run check` passes with 238 tests.

@@ -302,6 +302,17 @@ completion. The next implementation work, when resumed, follows the existing
 backlog entries; this section is not a second TODO list. Historical milestones
 below describe earlier scope and evidence.
 
+Update log: 2026-09-21 (twelfth entry) — implemented increments 2 and 3 of the
+mobile chat plan as 5.3. On the user's instruction the chat screen now owns the
+viewport: the transcript is the only scroll region, the page does not scroll, and
+no element is sticky. The composer starts at one line and grows to 8.5rem, follow
+applies only while the reader is at the end with Jump to latest otherwise,
+coarse-pointer Return inserts a newline, form controls render at 1rem, and buttons
+carry a 44px minimum. The shell footer is hidden on the chat screen.
+`npm run check` passes with 238 tests. Screenshot capture stopped responding in
+the environment, so validation is geometric. The remaining constraint is the
+shell chrome above the messages (UX-06).
+
 Update log: 2026-09-21 (eleventh entry) — restructured the chat screen for phones
 as increment 5.2: compact header with a Conversations drawer, collapsed Sources
 that keeps citation tier counts visible, wider messages and reduced transcript
@@ -1634,6 +1645,66 @@ navigation still consumes about 105px above the chat screen at 390px and wraps t
 two rows at 320px (UX-06).
 
 Next slice: increment 2, keeping messages and the composer within reach (UX-08).
+
+## Increment 5.3 — Chat scroll model, composer and touch: implemented, awaiting review
+
+Scope decided by the user as increments 2 and 3 of the mobile chat plan, with one
+instruction that changed the layout model: the chat screen owns the viewport and
+the transcript is its own scroll container, so the page does not scroll and no
+sticky positioning is needed. The application shell keeps its header and
+navigation (UX-06); its footer is hidden on the chat screen, where it would
+otherwise sit between the composer and the bottom of the screen.
+
+`main` becomes a viewport-height column when it contains the chat screen, and the
+chat column takes the leftover height. The transcript holds the story context,
+the collapsed sources, and the messages, and is the only scrolling region, with
+`overscroll-behavior: contain` stopping scroll chaining to the page. The composer
+sits below it as a fixed row of the column. `src/web/chat-viewport.ts` keeps the
+transcript at its end while the reader is following it, and
+`src/web/chat-scroll.ts` decides that from the distance to the end (a 120px
+threshold): following ends only when the reader scrolls away, resumes when they
+return, and restarts when another conversation opens. A ResizeObserver re-aligns
+the end while the composer grows, and Jump to latest appears in the composer only
+while the reader is away from the end.
+
+Composer and touch behaviour: the textarea starts at one line (44px) and grows to
+8.5rem with internal scrolling, the visible "Your question" label is now
+screen-reader-only, and the shortcut hint follows the input device — Enter sends
+on a fine pointer, Return inserts a newline on a coarse one with Send submitting
+— through `(hover: none), (pointer: coarse)`. Form controls now render at 1rem so
+iOS Safari does not zoom on focus, and buttons carry the same 44px minimum that
+inputs and selects already had.
+
+Validation: `npm run check` passes with 238 tests and a production build. In the
+local Worker at 320x568, 375x667, 390x844, 430x932, and 390x420 (keyboard-sized)
+the page never scrolls while the transcript scrolls internally; the transcript
+measures 66, 165, 342, and 430px and the composer and Send button stay inside the
+viewport. A wheel event over the transcript scrolled it 600px with the window
+still at 0. Opening a conversation lands at the end; scrolling away shows Jump to
+latest; pressing it returns to the end and hides the control; the distance to the
+end stayed 0 while the composer grew from one to eight lines. With
+`(pointer: coarse)` emulated, Return produced "first\nsecond" without sending, the
+textarea grew 49 → 72 → 136px (capped, scrolling internally), and the touch hint
+replaced the desktop hint; on a fine pointer the keys hint is shown and Enter
+takes the submit path without inserting a newline. The start state, an empty
+conversation, the drawer's focus trap and inert background, and Delete (accepted,
+removing only the conversation created for the check) were re-verified. Today,
+Topics, Archive, Memory & settings, and the Content lab at 320px keep no
+horizontal overflow, no footer overlap, and no squashed sections.
+
+Limitations: screenshot capture stopped responding in this environment (both the
+harness capture and CDP `Page.captureScreenshot` time out), so this increment's
+confirmation is geometric rather than visual. On a keyboard-sized viewport
+(390x420) the transcript falls to its 4rem floor, the page scrolls 110px, and the
+Send button sits below the fold until the reader scrolls; the binding constraint
+is now the shell chrome above the messages — the app header (43px) and the
+two-row navigation (105px) at 375px wide — which is UX-06. iOS Safari keyboard
+behaviour, rotation, and drawer focus on a device remain UX-07, and the
+detached-conversation, no-edition, and load-failure screens are still unreachable
+locally.
+
+Next slice: UX-06, the responsive shell, which is what now limits the transcript
+on short screens.
 
 ## Increment 6: Cloudflare hosting — plan, not started (2026-09-21)
 

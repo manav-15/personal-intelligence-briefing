@@ -23,6 +23,12 @@ describe('chat composer keys', () => {
     expect(composerKeyAction(keydown({ ctrlKey: true }))).toBe('newline');
   });
 
+  it('starts a new line instead of sending on a touch-first device', () => {
+    expect(composerKeyAction(keydown({}), { coarsePointer: true })).toBe(
+      'newline',
+    );
+  });
+
   it('leaves Shift/Alt+Enter and IME composition to the browser', () => {
     expect(composerKeyAction(keydown({ shiftKey: true }))).toBe('none');
     expect(composerKeyAction(keydown({ altKey: true }))).toBe('none');

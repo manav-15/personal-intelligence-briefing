@@ -1,9 +1,10 @@
 import { useAgent } from 'agents/react';
 import { useAgentChat } from '@cloudflare/ai-chat/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatMessage, ChatSession } from '../shared/chat';
 import type { Briefing, BriefingItem } from '../shared/briefings';
 import { composerKeyAction, insertLineBreak } from './chat-composer';
+import { useChatFollow } from './chat-viewport';
 import { evidenceSummary } from './chat-sources';
 import { ConversationDrawer } from './ChatDrawer';
 import {
@@ -84,6 +85,8 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
   const actionPending = useRef(false);
   const conversationsButton = useRef<HTMLButtonElement>(null);
   const drawerWasOpen = useRef(false);
+  const question = useRef<HTMLTextAreaElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
   const agent = useAgent({ agent: 'personal-briefing', name: ownerId });
   const {
     isRecovering,
@@ -98,6 +101,24 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
   const busy = isStreaming || isRecovering || changingConversation;
   const detachedSession = isDetachedSession(session);
   const composer = chatComposerState(busy, detachedSession);
+  const { jumpToLatest, showJump } = useChatFollow({
+    resetKey: session?.id ?? null,
+    revision: messages,
+    transcriptRef: transcript,
+  });
+
+  // The composer starts at one line and grows with the question, up to the
+  // bound in CSS. Border widths are added back because the box is border-box.
+  useLayoutEffect(() => {
+    const element = question.current;
+
+    if (element === null) return;
+
+    element.style.height = 'auto';
+    const borders = element.offsetHeight - element.clientHeight;
+
+    element.style.height = `${String(element.scrollHeight + borders)}px`;
+  }, [input]);
 
   useEffect(() => {
     void loadChatData()
@@ -306,21 +327,23 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
               'The answer could not be completed. Check your connection and try your question again.'}
           </p>
         )}
-        <StoryContext
-          briefing={briefing}
-          busy={busy}
-          detached={detachedSession}
-          onSelectStory={setSelectedStoryId}
-          onStart={() => {
-            void changeConversation(startConversation);
-          }}
-          selectedStory={selectedStory}
-          selectedStoryId={selectedStoryId}
-          session={session}
-        />
-        {session !== null && (
-          <>
-            <div aria-live="polite" className="chat-transcript">
+        {/* The one scrolling region: what the conversation is grounded in,
+            then the messages. The page itself does not scroll. */}
+        <div className="chat-transcript" ref={transcript}>
+          <StoryContext
+            briefing={briefing}
+            busy={busy}
+            detached={detachedSession}
+            onSelectStory={setSelectedStoryId}
+            onStart={() => {
+              void changeConversation(startConversation);
+            }}
+            selectedStory={selectedStory}
+            selectedStoryId={selectedStoryId}
+            session={session}
+          />
+          {session !== null && (
+            <div aria-live="polite" className="chat-messages">
               {messages.length === 0 && (
                 <p className="chat-empty">
                   Try “What changed?” or “What is the practical implication
@@ -342,59 +365,19 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
                 <p className="chat-status">Reconnecting to your answer…</p>
               )}
             </div>
-            <form className="chat-composer" onSubmit={submit}>
-              <label>
-                Your question
-                <textarea
-                  disabled={composer.disabled}
-                  maxLength={2_000}
-                  onChange={(event) => {
-                    setInput(event.target.value);
-                  }}
-                  onKeyDown={(event) => {
-                    const action = composerKeyAction(event);
-
-                    if (action === 'submit') {
-                      event.preventDefault();
-                      event.currentTarget.form?.requestSubmit();
-
-                      return;
-                    }
-
-                    if (action !== 'newline') return;
-                    event.preventDefault();
-                    const inserted = insertLineBreak(
-                      event.currentTarget.value,
-                      event.currentTarget.selectionStart,
-                      event.currentTarget.selectionEnd,
-                    );
-
-                    setInput(inserted.value);
-                    requestAnimationFrame(() => {
-                      event.currentTarget.setSelectionRange(
-                        inserted.caret,
-                        inserted.caret,
-                      );
-                    });
-                  }}
-                  placeholder={composer.placeholder}
-                  value={input}
-                />
-              </label>
-              <p className="chat-empty">
-                Enter sends your question. ⌘Enter (or Ctrl+Enter) starts a new
-                line.
-              </p>
-              <div>
-                <button
-                  disabled={composer.disabled || !input.trim()}
-                  type="submit"
-                >
-                  {busy ? 'Answering…' : 'Ask question'}
-                </button>
-              </div>
-            </form>
-          </>
+          )}
+        </div>
+        {session !== null && (
+          <ChatComposer
+            busy={busy}
+            composer={composer}
+            input={input}
+            jumpToLatest={jumpToLatest}
+            onInput={setInput}
+            onSubmit={submit}
+            questionRef={question}
+            showJump={showJump}
+          />
         )}
       </div>
       {drawerOpen && (
@@ -495,6 +478,103 @@ function StoryContext({
       )}
     </>
   );
+}
+
+/**
+ * Question composer.
+ *
+ * The textarea starts at one line and grows with the question up to the bound in
+ * CSS, so a long follow-up stays readable without taking the transcript's
+ * screen. Jump to latest appears above it only while the reader is away from the
+ * end of the transcript.
+ */
+function ChatComposer({
+  busy,
+  composer,
+  input,
+  jumpToLatest,
+  onInput,
+  onSubmit,
+  questionRef,
+  showJump,
+}: {
+  busy: boolean;
+  composer: { disabled: boolean; placeholder: string };
+  input: string;
+  jumpToLatest: () => void;
+  onInput: (value: string) => void;
+  onSubmit: (event: React.SyntheticEvent<HTMLFormElement>) => void;
+  questionRef: React.RefObject<HTMLTextAreaElement | null>;
+  showJump: boolean;
+}) {
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const action = composerKeyAction(event, {
+      coarsePointer: usesTouchInput(),
+    });
+
+    if (action === 'submit') {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+
+      return;
+    }
+
+    if (action !== 'newline') return;
+    event.preventDefault();
+    const inserted = insertLineBreak(
+      event.currentTarget.value,
+      event.currentTarget.selectionStart,
+      event.currentTarget.selectionEnd,
+    );
+
+    onInput(inserted.value);
+    requestAnimationFrame(() => {
+      event.currentTarget.setSelectionRange(inserted.caret, inserted.caret);
+    });
+  }
+
+  return (
+    <form className="chat-composer" onSubmit={onSubmit}>
+      {showJump && (
+        <button className="chat-jump" onClick={jumpToLatest} type="button">
+          Jump to latest
+        </button>
+      )}
+      <label>
+        <span className="sr-only">Your question</span>
+        <textarea
+          disabled={composer.disabled}
+          maxLength={2_000}
+          onChange={(event) => {
+            onInput(event.target.value);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={composer.placeholder}
+          ref={questionRef}
+          rows={1}
+          value={input}
+        />
+      </label>
+      <p className="chat-hint chat-composer-hint">
+        <span className="chat-hint-keys">
+          Enter sends your question. ⌘Enter (or Ctrl+Enter) starts a new line.
+        </span>
+        <span className="chat-hint-touch">
+          Return adds a line. Tap Ask question to send.
+        </span>
+      </p>
+      <div>
+        <button disabled={composer.disabled || !input.trim()} type="submit">
+          {busy ? 'Answering…' : 'Ask question'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** True when the primary pointer is a touch screen, where Return must not send a question. */
+function usesTouchInput(): boolean {
+  return window.matchMedia('(pointer: coarse)').matches;
 }
 
 /** Keeps input disabled when a retained transcript no longer has briefing evidence. */
