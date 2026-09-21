@@ -15,7 +15,7 @@ import type {
 export const briefingCompositionModel =
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 /** Versioned model instruction set retained in briefing provenance. */
-export const briefingCompositionPromptVersion = '2026-09-19.4';
+export const briefingCompositionPromptVersion = '2026-09-21.2';
 /** Versioned deterministic evidence policy retained in briefing provenance. */
 export const briefingEvidencePolicyVersion = '2026-09-19.2';
 
@@ -110,6 +110,47 @@ export type BriefingCompositionResult =
 /** Minimal Workers AI seam used by composition and deterministic tests. */
 export type BriefingCompositionAi = {
   run(model: string, input: unknown): Promise<unknown>;
+};
+
+/**
+ * Why one model selection cannot become a cited briefing item. Each category is
+ * decided from the supplied candidates alone, so it is safe to disclose.
+ */
+type ItemRejection =
+  | 'empty-summary'
+  | 'unknown-candidate'
+  | 'duplicate-candidate'
+  | 'topic-mismatch'
+  | 'unsupported-grouping'
+  | 'unsupported-update'
+  | 'unknown-prior-item';
+
+/** Outcome of one model selection: a cited item, a disclosed rejection, or a silent filter. */
+type ItemOutcome =
+  | { kind: 'item'; item: BriefingItem }
+  | { kind: 'rejected'; rejection: ItemRejection }
+  | { kind: 'skipped' };
+
+/** Fixed reading order for the disclosed rejection reasons. */
+const rejectionOrder: ItemRejection[] = [
+  'unknown-candidate',
+  'duplicate-candidate',
+  'topic-mismatch',
+  'unsupported-grouping',
+  'unsupported-update',
+  'unknown-prior-item',
+  'empty-summary',
+];
+
+/** Plain-language reason for one rejected selection; no source or headline is disclosed. */
+const rejectionReasons: Record<ItemRejection, string> = {
+  'empty-summary': 'missing a grounded summary',
+  'unknown-candidate': 'referencing a story that was not supplied',
+  'duplicate-candidate': 'reusing a story that was already used',
+  'topic-mismatch': 'presenting a topic that did not match its stories',
+  'unsupported-grouping': 'grouping stories with incompatible topic settings',
+  'unsupported-update': 'claiming an update without a supported change',
+  'unknown-prior-item': 'referencing prior coverage the run was not given',
 };
 
 /** Builds bounded model context from temporary candidates and recent publications. */
@@ -228,7 +269,8 @@ const compositionSystemPrompt = [
   'Aim for targetMinutes * 200 words across headlines, summaries, and change explanations; never exceed that budget. Prefer fewer strong stories to padding. Meet minStories only when evidence supports them.',
   'Do not pad the briefing. Respect supplied topic intent, exclusions, source policy, and summary settings.',
   'Every selected item needs a non-empty grounded summary. Omit any item you cannot summarize.',
-  'Group only closely related candidates.',
+  'Group only closely related candidates, and only when they share a topic.',
+  'For every item, presentationTopicId must be one of the topicIds listed on the candidates you selected for it. Never present an item under a topic its own candidates do not belong to.',
   'For every item, first assess three independent dimensions from supplied evidence and context:',
   'topicFit: 0=no match or excluded, 1=incidental, 2=tangential, 3=relevant, 4=direct fit, 5=core topic fit.',
   'briefingValue: 0=no briefing value, 1=minor, 2=useful, 3=major or high-impact for the requested briefing.',
@@ -240,6 +282,7 @@ const compositionSystemPrompt = [
   'Give a short reason that explains the component scores using supplied evidence and context.',
   'Do not repeat prior coverage as new; an unchanged story has novelty 0 and must be omitted. Matching prior headlines require a supported substantial update.',
   'Mark substantial-update only with supplied prior coverage references and a concrete supported whatChanged statement.',
+  'If you cannot satisfy these rules for one item, omit that item instead of returning it.',
   'Return only JSON matching the schema.',
 ].join(' ');
 
@@ -427,9 +470,10 @@ function materializeBriefing(
   );
   const selected = new Set<string>();
   const items: BriefingItem[] = [];
+  const rejections: ItemRejection[] = [];
 
   for (const decision of orderByRelevance(response.items)) {
-    const item = materializeItem(
+    const outcome = materializeItem(
       decision,
       candidates,
       selected,
@@ -438,25 +482,34 @@ function materializeBriefing(
       items.length,
     );
 
-    if (item !== undefined) items.push(item);
+    if (outcome.kind === 'item') items.push(outcome.item);
+
+    if (outcome.kind === 'rejected') rejections.push(outcome.rejection);
   }
 
-  if (items.length === 0)
-    throw new Error(
-      'No new stories met your preferences with enough supporting evidence.',
-    );
-
-  if (items.length > input.reading.maxStories)
-    throw new Error('Model exceeded the story budget.');
-
+  if (items.length === 0) throw new Error(noUsableStories(rejections));
+  const overflowed = items.length > input.reading.maxStories;
+  const published = items.slice(0, input.reading.maxStories);
   const limitations = input.collectionLimitations
     .filter((message, index, all) => all.indexOf(message) === index)
-    .slice(0, 47)
+    .slice(0, 45)
     .map((message, index) => ({
       code: `collection-${String(index)}`,
       message,
     }));
-  const words = items.reduce(
+
+  if (rejections.length > 0)
+    limitations.push({
+      code: 'composition-rejected',
+      message: `Discarded ${rejectionSummary(rejections)}. The edition keeps the remaining stories.`,
+    });
+
+  if (overflowed)
+    limitations.push({
+      code: 'story-budget',
+      message: `Only the ${String(published.length)} most relevant of ${String(items.length)} selected stories were published to stay within your story limit.`,
+    });
+  const words = published.reduce(
     (total, item) =>
       total +
       `${item.headline} ${item.summary} ${item.update?.whatChanged ?? ''}`
@@ -470,13 +523,13 @@ function materializeBriefing(
       'The draft exceeded your reading budget. Please try again.',
     );
 
-  if (items.length < input.reading.minStories)
+  if (published.length < input.reading.minStories)
     limitations.push({
       code: 'short-edition',
       message:
         'Fewer strong stories were available than requested. This edition has not been padded.',
     });
-  const covered = new Set(items.flatMap((item) => item.topicIds));
+  const covered = new Set(published.flatMap((item) => item.topicIds));
   const missing = input.topics.filter((topic) => !covered.has(topic.id));
 
   if (missing.length > 0)
@@ -484,7 +537,7 @@ function materializeBriefing(
       code: 'topic-coverage',
       message: `No eligible stories were selected for ${missing.map((topic) => topic.name).join(', ')}.`,
     });
-  const hasDescriptionOnlyItem = items.some((item) =>
+  const hasDescriptionOnlyItem = published.some((item) =>
     item.citations.every((citation) => citation.evidenceTier === 'description'),
   );
 
@@ -505,7 +558,7 @@ function materializeBriefing(
     ),
     completeness: limitations.length === 0 ? 'complete' : 'partial',
     limitations,
-    items,
+    items: published,
     publishedAt: now.toISOString(),
     composition: {
       model: briefingCompositionModel,
@@ -523,15 +576,14 @@ function materializeItem(
   priorCoverage: BriefingPriorItem[],
   topics: z.infer<typeof compositionTopicSchema>[],
   position: number,
-): BriefingItem | undefined {
+): ItemOutcome {
   const score = relevanceScore(decision);
 
-  if (
-    !decision.summary ||
-    score < relevanceThreshold ||
-    decision.assessment.novelty === 0
-  )
-    return undefined;
+  if (!decision.summary)
+    return { kind: 'rejected', rejection: 'empty-summary' };
+
+  if (score < relevanceThreshold || decision.assessment.novelty === 0)
+    return { kind: 'skipped' };
 
   if (
     decision.coverageKind === 'new' &&
@@ -541,17 +593,17 @@ function materializeItem(
         normalizeHeadline(decision.headline),
     )
   )
-    return undefined;
+    return { kind: 'skipped' };
   const candidateValues = decision.candidateIds.map((id) => candidates.get(id));
 
   if (candidateValues.some((candidate) => candidate === undefined))
-    throw new Error('Model referenced an unavailable candidate.');
+    return { kind: 'rejected', rejection: 'unknown-candidate' };
 
   if (new Set(decision.candidateIds).size !== decision.candidateIds.length)
-    throw new Error('Model selected a candidate more than once.');
+    return { kind: 'rejected', rejection: 'duplicate-candidate' };
 
   if (decision.candidateIds.some((id) => selected.has(id)))
-    throw new Error('Model selected a candidate more than once.');
+    return { kind: 'rejected', rejection: 'duplicate-candidate' };
   const candidatesForItem = candidateValues as z.infer<
     typeof compositionCandidateSchema
   >[];
@@ -560,22 +612,22 @@ function materializeItem(
   ];
 
   if (!topicIds.includes(decision.presentationTopicId))
-    throw new Error('Presentation topic does not match selected candidates.');
+    return { kind: 'rejected', rejection: 'topic-mismatch' };
 
   if (!hasCompatibleTopicProfiles(topicIds, topics))
-    throw new Error(
-      'Model grouped candidates with incompatible topic profiles.',
-    );
+    return { kind: 'rejected', rejection: 'unsupported-grouping' };
 
   const update = materializeUpdate(decision, priorCoverage);
+
+  if (!update.ok) return { kind: 'rejected', rejection: update.rejection };
+
+  // One citation is produced per selected candidate, and the model schema caps
+  // `candidateIds` at 10, so an item can never exceed the citation budget here.
   const citations = candidatesForItem.map((candidate) => ({
     sourceUrl: candidate.sourceUrl,
     publisher: candidate.publisher,
     evidenceTier: candidate.evidenceTier,
   }));
-
-  if (citations.length > 10)
-    throw new Error('Model exceeded the citation budget.');
 
   for (const candidate of candidatesForItem) selected.add(candidate.id);
   const descriptionOnly = citations.every(
@@ -586,31 +638,37 @@ function materializeItem(
     : decision.summary;
 
   return {
-    id: `item-${String(position + 1)}`,
-    topicIds,
-    headline: decision.headline,
-    summary,
-    publishedAt: newestDate(candidatesForItem),
-    citations,
-    ...(update === undefined ? {} : { update }),
+    kind: 'item',
+    item: {
+      id: `item-${String(position + 1)}`,
+      topicIds,
+      headline: decision.headline,
+      summary,
+      publishedAt: newestDate(candidatesForItem),
+      citations,
+      ...(update.update === undefined ? {} : { update: update.update }),
+    },
   };
 }
 
 function materializeUpdate(
   decision: z.infer<typeof modelItemSchema>,
   priorCoverage: BriefingPriorItem[],
-) {
+):
+  | { ok: true; update: BriefingItem['update'] }
+  | {
+      ok: false;
+      rejection: ItemRejection;
+    } {
   if (decision.coverageKind === 'new') {
     if (decision.previousItems.length > 0 || hasChangeExplanation(decision))
-      throw new Error('New coverage cannot claim a previous item.');
+      return { ok: false, rejection: 'unsupported-update' };
 
-    return undefined;
+    return { ok: true, update: undefined };
   }
 
   if (decision.previousItems.length === 0 || !hasChangeExplanation(decision))
-    throw new Error(
-      'A substantial update requires prior coverage and a change explanation.',
-    );
+    return { ok: false, rejection: 'unsupported-update' };
   const prior = new Set(
     priorCoverage.map((item) => `${item.runId}:${item.itemId}`),
   );
@@ -620,11 +678,14 @@ function materializeUpdate(
       (item) => !prior.has(`${item.runId}:${item.itemId}`),
     )
   )
-    throw new Error('Model referenced unavailable prior coverage.');
+    return { ok: false, rejection: 'unknown-prior-item' };
 
   return {
-    previousItems: decision.previousItems,
-    whatChanged: decision.whatChanged,
+    ok: true,
+    update: {
+      previousItems: decision.previousItems,
+      whatChanged: decision.whatChanged,
+    },
   };
 }
 
@@ -632,6 +693,36 @@ function hasChangeExplanation(
   decision: z.infer<typeof modelItemSchema>,
 ): decision is z.infer<typeof modelItemSchema> & { whatChanged: string } {
   return decision.whatChanged !== null && decision.whatChanged.length > 0;
+}
+
+/** Counts each rejected selection by reason, in a fixed reading order. */
+function rejectionSummary(rejections: ItemRejection[]): string {
+  return rejectionOrder
+    .map((category) => ({
+      category,
+      count: rejections.filter((rejection) => rejection === category).length,
+    }))
+    .filter((entry) => entry.count > 0)
+    .map(
+      (entry) =>
+        `${selectionCount(entry.count)} ${rejectionReasons[entry.category]}`,
+    )
+    .join('; ');
+}
+
+/** Names a number of rejected or discarded selections without leaking their content. */
+function selectionCount(count: number): string {
+  return `${String(count)} ${count === 1 ? 'selection' : 'selections'}`;
+}
+
+/** Fails a draft with no usable items and, when applicable, the reasons they were discarded. */
+function noUsableStories(rejections: ItemRejection[]): string {
+  const base =
+    'No new stories met your preferences with enough supporting evidence.';
+
+  if (rejections.length === 0) return base;
+
+  return `${base} Discarded ${rejectionSummary(rejections)}.`;
 }
 
 function newestDate(candidates: z.infer<typeof compositionCandidateSchema>[]) {

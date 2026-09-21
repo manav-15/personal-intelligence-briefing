@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { Briefing } from '../shared/briefings';
 import { examplePreferences } from '../shared/preferences';
 import {
   buildBriefingCompositionInput,
@@ -127,20 +128,37 @@ describe('briefing composition', () => {
       });
   });
 
-  it('rejects model references to candidates that were not packed', async () => {
+  it('publishes the valid items and discloses a discarded selection', async () => {
     const result = await composeBriefing(
-      compositionInput(),
+      multiInput(1),
       responseAi({
-        ...validResponse(),
         items: [
-          { ...validResponse().items[0], candidateIds: ['candidate-99'] },
+          itemFor('candidate-9', 'Unpacked story'),
+          itemFor('candidate-1', 'Provider releases a new AI model'),
         ],
       }),
     );
 
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+    ]);
+    expect(result.briefing.completeness).toBe('partial');
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection referencing a story that was not supplied. The edition keeps the remaining stories.',
+    );
+  });
+
+  it('fails the whole draft when every selection is discarded', async () => {
+    const result = await composeBriefing(
+      compositionInput(),
+      responseAi({ items: [itemFor('candidate-99', 'Unpacked story')] }),
+    );
+
     expect(result).toEqual({
       ok: false,
-      error: 'Model referenced an unavailable candidate.',
+      error:
+        'No new stories met your preferences with enough supporting evidence. Discarded 1 selection referencing a story that was not supplied.',
     });
   });
 
@@ -178,117 +196,182 @@ describe('briefing composition', () => {
       ok: true,
       briefing: { items: [{ summary: valid.summary }] },
     });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection missing a grounded summary. The edition keeps the remaining stories.',
+    );
   });
 
-  it('requires non-empty change explanation for a substantial update', async () => {
-    const response = {
-      ...validResponse(),
-      items: validResponse().items.map((item) => ({
-        ...item,
-        coverageKind: 'substantial-update',
-        whatChanged: '',
-      })),
-    };
+  it('discards an update without a supported change and keeps the valid story', async () => {
+    const result = await composeBriefing(
+      multiInput(1),
+      responseAi({
+        items: [
+          {
+            ...itemFor('candidate-2', 'Unsupported update'),
+            coverageKind: 'substantial-update',
+            whatChanged: '',
+          },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+        ],
+      }),
+    );
 
-    await expect(
-      composeBriefing(compositionInput(), responseAi(response)),
-    ).resolves.toEqual({
-      ok: false,
-      error:
-        'A substantial update requires prior coverage and a change explanation.',
-    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+    ]);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection claiming an update without a supported change. The edition keeps the remaining stories.',
+    );
   });
 
-  it('rejects duplicate candidate IDs before creating duplicate citations', async () => {
-    const response = validResponse();
+  it('discards a selection that lists the same candidate twice', async () => {
+    const result = await composeBriefing(
+      multiInput(1),
+      responseAi({
+        items: [
+          {
+            ...itemFor('candidate-2', 'Repeated candidate'),
+            candidateIds: ['candidate-2', 'candidate-2'],
+          },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+        ],
+      }),
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+    ]);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection reusing a story that was already used. The edition keeps the remaining stories.',
+    );
+  });
+
+  it('discards a selection that reuses a story an earlier selection already used', async () => {
     const result = await composeBriefing(
       compositionInput(),
       responseAi({
-        ...response,
         items: [
-          {
-            ...response.items[0],
-            candidateIds: ['candidate-1', 'candidate-1'],
-          },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+          itemFor('candidate-1', 'Provider releases a new AI model', {
+            topicFit: 4,
+          }),
         ],
       }),
     );
 
-    expect(result).toEqual({
-      ok: false,
-      error: 'Model selected a candidate more than once.',
-    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items).toHaveLength(1);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection reusing a story that was already used. The edition keeps the remaining stories.',
+    );
   });
 
-  it('requires a supported prior item and change explanation for substantial updates', async () => {
-    const prior: BriefingPriorItem = {
-      runId: 'e61584be-72fd-4f78-b765-1c302ac57ab7',
-      itemId: 'item-1',
-      topicIds: ['ai'],
-      headline: 'Earlier AI release',
-      summary: 'The provider announced an earlier model.',
-      publishedAt: '2026-09-18T00:00:00.000Z',
-    };
-    const response = validResponse();
+  it('discards a selection whose presentation topic does not match its candidates', async () => {
     const result = await composeBriefing(
-      compositionInput([prior]),
+      multiInput(1),
       responseAi({
-        ...response,
         items: [
           {
-            ...response.items[0],
-            coverageKind: 'substantial-update',
-            previousItems: [{ runId: prior.runId, itemId: prior.itemId }],
-            whatChanged: 'The release adds a supported new capability.',
+            ...itemFor('candidate-2', 'Mismatched topic'),
+            presentationTopicId: 'world',
           },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
         ],
       }),
     );
 
-    expect(result).toMatchObject({
-      ok: true,
-      briefing: {
-        items: [
-          {
-            update: {
-              whatChanged: 'The release adds a supported new capability.',
-            },
-          },
-        ],
-      },
-    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+    ]);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection presenting a topic that did not match its stories. The edition keeps the remaining stories.',
+    );
   });
 
-  it('rejects a group whose topics have incompatible effective profiles', async () => {
-    const base = compositionInput();
-    const input = {
-      ...base,
-      candidates: base.candidates.map((candidate) => ({
-        ...candidate,
-        topicIds: ['ai', 'world'],
-      })),
-      topics: base.topics.map((topic) =>
-        topic.id === 'world'
-          ? {
-              ...topic,
-              summary: {
-                format: 'bullets',
-                depth: 'detailed',
-                audience: 'General reader',
-                emphasis: [],
-                instructions: '',
+  it('discards a selection that references prior coverage the run was not given', async () => {
+    const result = await composeBriefing(
+      multiInput(1),
+      responseAi({
+        items: [
+          {
+            ...itemFor('candidate-2', 'Unknown prior coverage'),
+            coverageKind: 'substantial-update',
+            previousItems: [
+              {
+                runId: 'e61584be-72fd-4f78-b765-1c302ac57ab7',
+                itemId: 'never-supplied',
               },
-            }
-          : topic,
-      ),
-    };
+            ],
+            whatChanged: 'Claims a change against a story the run never saw.',
+          },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+        ],
+      }),
+    );
 
-    await expect(
-      composeBriefing(input, responseAi(validResponse())),
-    ).resolves.toEqual({
-      ok: false,
-      error: 'Model grouped candidates with incompatible topic profiles.',
-    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+    ]);
+    expect(limitation(result.briefing, 'composition-rejected')).toBe(
+      'Discarded 1 selection referencing prior coverage the run was not given. The edition keeps the remaining stories.',
+    );
+  });
+
+  it('keeps a discarded selection from reserving its candidates', async () => {
+    const result = await composeBriefing(
+      compositionInput(),
+      responseAi({
+        items: [
+          {
+            ...itemFor('candidate-1', 'Mismatched topic'),
+            presentationTopicId: 'world',
+          },
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+        ],
+      }),
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items).toHaveLength(1);
+    expect(result.briefing.items[0]?.id).toBe('item-1');
+    expect(limitation(result.briefing, 'composition-rejected')).toContain(
+      'presenting a topic that did not match its stories',
+    );
+  });
+
+  it('publishes the most relevant stories when the model exceeds the story limit', async () => {
+    const input = {
+      ...multiInput(2),
+      reading: { targetMinutes: 5, minStories: 1, maxStories: 2 },
+    };
+    const result = await composeBriefing(
+      input,
+      responseAi({
+        items: [
+          itemFor('candidate-3', 'Least relevant', {
+            topicFit: 4,
+            briefingValue: 2,
+          }),
+          itemFor('candidate-1', 'Provider releases a new AI model'),
+          itemFor('candidate-2', 'Second story', { topicFit: 4 }),
+        ],
+      }),
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.briefing.items.map(citedUrl)).toEqual([
+      'https://publisher.example/article',
+      'https://publisher.example/article-2',
+    ]);
+    expect(limitation(result.briefing, 'story-budget')).toBe(
+      'Only the 2 most relevant of 3 selected stories were published to stay within your story limit.',
+    );
   });
 
   it('does not call the model when collection has no usable evidence', async () => {
@@ -337,6 +420,84 @@ function compositionInput(priorCoverage: BriefingPriorItem[] = []) {
     priorCoverage,
     date,
   );
+}
+
+/** Input with the single fixture candidate plus numbered extra AI candidates. */
+function multiInput(extraCandidates: number) {
+  return buildBriefingCompositionInput(
+    snapshot(),
+    {
+      candidates: [
+        ...collection().candidates,
+        ...Array.from({ length: extraCandidates }, (_, index) =>
+          extraCandidate(index + 2),
+        ),
+      ],
+      failures: [],
+    },
+    [],
+    date,
+  );
+}
+
+/** One additional candidate for drafts that need more than one packable story. */
+function extraCandidate(number: number) {
+  const sourceUrl = `https://publisher.example/article-${String(number)}`;
+
+  return {
+    story: {
+      id: `story-${String(number)}`,
+      title: `Provider releases AI model ${String(number)}`,
+      publisher: 'Example Publisher',
+      publishedAt: '2026-09-19T00:00:00.000Z',
+      sourceUrl,
+      discovery: 'searxng' as const,
+    },
+    topicIds: ['ai'],
+    evidence: {
+      status: 'usable' as const,
+      articleUrl: sourceUrl,
+      text: `Evidence for story ${String(number)}. ${'evidence '.repeat(600)}`,
+      truncated: false,
+      provenance: 'publisher-page' as const,
+      pageTitle: `Provider releases AI model ${String(number)}`,
+      extraction: 'article-region' as const,
+    },
+    evidenceTier: 'article' as const,
+  };
+}
+
+/** One model selection with an overridable assessment score. */
+function itemFor(
+  candidateId: string,
+  headline: string,
+  assessment: { topicFit?: number; briefingValue?: number } = {},
+) {
+  return {
+    candidateIds: [candidateId],
+    presentationTopicId: 'ai',
+    headline,
+    summary: `${headline} is reported with a grounded summary.`,
+    assessment: {
+      topicFit: assessment.topicFit ?? 5,
+      briefingValue: assessment.briefingValue ?? 3,
+      novelty: 2,
+      reason:
+        'It directly matches the AI topic and reports a material release.',
+    },
+    coverageKind: 'new',
+    previousItems: [],
+    whatChanged: null,
+  };
+}
+
+function citedUrl(item: { citations: { sourceUrl: string }[] }): string {
+  return item.citations[0]?.sourceUrl ?? '';
+}
+
+/** Finds one disclosed limitation message by its stable code. */
+function limitation(briefing: Briefing, code: string): string | undefined {
+  return briefing.limitations.find((entry) => entry.code === code)?.message;
 }
 
 function snapshot(): BriefingCollectionSnapshot {
