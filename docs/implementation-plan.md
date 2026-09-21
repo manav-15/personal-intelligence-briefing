@@ -367,6 +367,19 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Put SearXNG back in service locally at the owner's direction, with
+  Google News and Brave excluded, and verified a new topic end to end. The engine
+  set needed the general `duckduckgo` engine added: with the news category alone,
+  the football topic returned zero results, and after the change Liverpool FC
+  Premier League returned 40 results with 40 dates while artificial intelligence
+  returned 42 with 32 dates. A new Semiconductor industry topic was saved as
+  revision 4 and generated run `078602f0`, which published a 7-item edition: two
+  article-tier items (pulse2.com, MarkTechPost) and five labelled description-tier
+  items whose publishers could not be retrieved (msn.com three times, insidermonkey,
+  atvtoday). Two limitations are recorded: `bing news` fails every query with HTTP
+  connection errors and marks those queries partial while still contributing results
+  intermittently, and a long-running SearXNG instance had gone silent on every
+  engine except reuters until restarted, which a hosted container must handle.
 - **2026-09-21:** Measured the captcha-free alternative to scraping, after the owner
   reported that SearXNG's Google engine reaches a captcha wall. Publisher RSS
   answered 200 with direct publisher links and dates (BBC World 27 items, Guardian

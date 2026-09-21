@@ -4,10 +4,16 @@ use_default_settings:
     # Only news engines that return usable publication dates are kept. Google's
     # news engine is CAPTCHA-suspended and Brave's news results arrive without
     # dates, so both are present here only to be disabled explicitly below.
+    # General engines are kept alongside them because the news category alone
+    # leaves whole topics uncovered — football returns nothing from Reuters.
     keep_only:
       - bing news
       - duckduckgo news
       - reuters
+      - duckduckgo
+      - mojeek
+      - hackernews
+      - wikipedia
       # Kept only to disable it: the news engine shares this engine's network
       # configuration, and its definition must remain or startup fails.
       - brave
@@ -21,6 +27,9 @@ engines:
     disabled: true
   - name: brave.news
     disabled: true
+  # Dated, direct publisher links for AI and developer stories; ships disabled.
+  - name: hackernews
+    disabled: false
 
 general:
   instance_name: Personal Briefing Search

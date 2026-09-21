@@ -1396,3 +1396,21 @@ paragraph text (BBC 1,041 and 1,010 words, Guardian 601 and 831, Sky Sports news
 932). Recorded DISC-11 for a feed-and-API discovery channel with the decision it
 needs (curated registry versus per-topic configuration), extended DISC-10 with the
 measurements, and deleted the probe.
+
+### SearXNG back with non-Google engines, verified on a new topic (2026-09-21)
+
+**User instruction (verbatim):** “for now, let's go back to searXNG and use other
+source engines apart from google. Verify locally for a new topic and see the
+response we get”
+
+**Outcome:** Started the pinned local SearXNG, kept `bing news`, `duckduckgo news`
+and `reuters` with Google News and Brave disabled, and found the news category
+alone left football at zero results, so the general `duckduckgo` engine was added
+(and `hackernews` enabled) in `infra/searxng/settings.yml`. Coverage after a
+restart: football 40 results/40 dated, artificial intelligence 42/32, up from 0 for
+football. Added a new Semiconductor industry topic locally as revision 4 and ran
+generation: run `078602f0` published a 7-item edition with two article-tier and
+five labelled description-tier items, the latter because msn.com, insidermonkey and
+atvtoday block retrieval. Diagnosed two operational issues — `bing news` raising
+HTTP connection errors on every query while still contributing intermittently, and a
+long-running instance going silent on all engines but reuters until restarted.
