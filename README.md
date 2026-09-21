@@ -10,6 +10,9 @@ saved local time; manual generation stays available.
 [Open Personal Briefing](https://personal-intelligence-briefing.chiraniamanav15.workers.dev)
 
 The app is protected by Cloudflare Access, so an authorized session is required.
+Choose Google sign-in or the emailed one-time PIN. If you do not receive a PIN,
+contact [chiraniamanav15@gmail.com](mailto:chiraniamanav15@gmail.com) to request
+allowlisting.
 
 ## What works
 

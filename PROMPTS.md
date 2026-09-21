@@ -1682,3 +1682,11 @@ production-disabled diagnostic API policy remains unchanged.
 `https://personal-intelligence-briefing.chiraniamanav15.workers.dev` redirects
 to the configured Cloudflare Access login, then added it to the README with an
 explicit authorized-session notice.
+
+### Access PIN support note (2026-09-21)
+
+**User instruction (verbatim):** "Okay I have added login with email as well. Add a note in the readme - that if you don't receive the PIN, reach out to chiraniamanav15@gmail.com to allowlist. push"
+
+**Outcome:** Added the deployed-app sign-in note: users can choose Google or an
+emailed one-time PIN, and PIN-delivery issues are directed to the owner for
+allowlisting support.
