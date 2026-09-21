@@ -1533,3 +1533,26 @@ supporting evidence.` Workflow step outputs were read with `wrangler workflows i
 describe`, which is how the composition result was confirmed. The remaining limitation is
 hosted eligible yield per engine, recorded as DISC-12 with the measured evidence; DEPLOY-01
 and DISC-10 were updated accordingly.
+
+### Structured logs for the deployed Worker (2026-09-21)
+
+**User instruction (verbatim):** "Add logs in the worker. i enabled observability in the dashboard - { "observability": { "logs": { "enabled": true, "invocation_logs": true, "persist": true } } }"
+
+**Material coding prompt:** Add structured events across the Worker so the
+dashboard shows what a run did, keep article text and model output out of the
+lines, and mirror the observability block in wrangler.jsonc.
+
+**Outcome:** `src/server/log.ts` emits one JSON line per event with an `event`
+name, counts, identifiers, durations and code-owned messages, plus
+`boundedMessage` so a caught error is loggable without its model-output
+diagnostic. Events cover the briefing pipeline (`briefing.started`, `collected`,
+`composed`, `published`, `failed`), chat (`chat.answered`, `chat.failed`), topic
+proposals (`proposal.created`, `proposal.failed`), and access denials
+(`access.denied`, now structured). `briefing.collected` reports provider
+returned leads, failures with engine names, per-query status, and every lead
+counted by the outcome collection gave it. `wrangler.jsonc` now carries the
+observability block, so `npm run deploy` keeps it. Verified on a local run: both
+runs logged the four pipeline events as JSON lines and reported
+`returned: 95, candidates: 6, outcomes: stale:89/description:4/article:1/headline-only:1`
+with `bing news` the only failing engine — which moved DISC-06 from "measure
+first" to a concrete missing-range-filter fix.

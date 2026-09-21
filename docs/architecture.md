@@ -144,6 +144,29 @@ result. Current default limits are 12 discovery calls, 8 results per call, 36
 deduplicated candidates, and 12 evidence fetches. Retry budget is explicitly
 zero until the Workflow supplies bounded backoff in 4.4.
 
+## Observability and logs (2026-09-21)
+
+Workers Logs is enabled in `wrangler.jsonc` with `invocation_logs` and
+`persist`, so the dashboard keeps both request logs and the structured events
+this Worker writes. `src/server/log.ts` owns the format: one JSON line per
+event, an `event` name plus counts, identifiers, durations and code-owned
+messages, at `info` or `warn` level.
+
+The event vocabulary is deliberately small — `briefing.started`,
+`briefing.collected`, `briefing.composed`, `briefing.published`,
+`briefing.failed`, `chat.answered`, `chat.failed`, `proposal.created`,
+`proposal.failed`, `access.denied` — and each carries a bounded summary rather
+than a payload. Article text, model output, prompts, request bodies, and
+credentials never reach a log line, because the platform persists them.
+`boundedMessage` exists so a caught error becomes a short loggable string while
+the richer diagnostic stays in the API response for the owner.
+
+`briefing.collected` is the diagnostic that matters most: it reports the
+provider's returned leads, the collection failures with engine names, per-query
+status and counts, and every returned lead counted by the outcome collection
+gave it. That is what explains a thin edition when discovery itself answered
+normally.
+
 ## Grounded composition draft (2026-09-19)
 
 The Agent can compose an in-memory briefing draft from an active collection

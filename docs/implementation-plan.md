@@ -127,15 +127,35 @@ streamed Worker, Workflow and Container traffic.
   both runs. The first run composed and published a one-item `partial` edition
   (limitations: evidence collection incomplete, short edition, topic coverage).
   The second composed nothing usable and failed with `No new stories met your
-  preferences with enough supporting evidence.`
+preferences with enough supporting evidence.`
 - Workflow instances for both runs completed; step outputs are readable with
   `wrangler workflows instances describe briefing-workflow <id>`. The
   `reconcileWorkflow` poll after publication calls `failBriefingRun`, which the
   Agent rejects because the run is already published, so the edition stands.
 
 The limiting factor is therefore hosted eligible yield rather than Container
-availability: queries succeed, but few returned leads are fresh, dated and
-non-duplicate. That measurement and its tuning are tracked as DISC-12.
+availability, and the structured logs added below name it precisely: most
+returned leads are stale under the app-side freshness window. That measurement
+and its fix are tracked as DISC-06 and DISC-12.
+
+### Observability and its first measurement (2026-09-21)
+
+Workers Logs is enabled in `wrangler.jsonc` (`invocation_logs` and `persist`)
+and the Worker now writes structured events through `src/server/log.ts`:
+`briefing.started`, `briefing.collected`, `briefing.composed`,
+`briefing.published`, `briefing.failed`, `chat.answered`, `chat.failed`,
+`proposal.created`, `proposal.failed`, and `access.denied`. Each event carries
+counts, identifiers, durations, and code-owned messages; article text, model
+output, prompts, and credentials are excluded, and a caught error is reduced by
+`boundedMessage` while its richer diagnostic stays in the API response.
+
+Verified against a local run: the four briefing events appeared as one JSON line
+each, and `briefing.collected` reported `queries: 12, returned: 95, candidates: 6,
+failures: 18, outcomes: ["stale:89","description:4","article:1","headline-only:1"]`
+with `bing news` as the only failing engine. That measurement replaces the
+guessed cause of small editions: discovery answers, but the missing provider-side
+date filter leaves almost every lead outside the freshness window, so DISC-06 now
+carries the fix and DISC-12 the before/after re-measurement.
 
 ### Scope and next slice
 
@@ -145,6 +165,11 @@ SearXNG engine and publisher errors are expected and must remain visible. Curren
 work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (fifth entry) — added structured Workers Logs events
+across the briefing pipeline, chat and topic proposals, enabled observability in
+`wrangler.jsonc`, and recorded the first `briefing.collected` measurement that
+identifies the stale-lead ratio as the limit on edition size.
 
 Update log: 2026-09-21 (fourth entry) — composition now discards a contradictory
 model selection per item, discloses it as one `composition-rejected` limitation,

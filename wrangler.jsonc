@@ -8,6 +8,15 @@
   // so there is no second, easily-forgotten surface to protect.
   "workers_dev": true,
   "preview_urls": false,
+  // Workers Logs keeps the structured events from src/server/log.ts plus request
+  // invocation logs. They carry counts, identifiers and code-owned messages only.
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+    },
+  },
   // Access verifies every request: the team domain supplies the signing keys and
   // ACCESS_AUD pins the one application whose tokens are accepted.
   "vars": {

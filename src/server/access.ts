@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { readBoundedText } from './http';
+import { logEvent } from './log';
 import type { Fetcher } from './discovery';
 
 /** Configuration that decides how one request proves who it is. */
@@ -395,7 +396,11 @@ function decodeBytes(segment: string): Uint8Array | null {
 export function logAccessDenial(message: string, request: Request): void {
   const { pathname } = new URL(request.url);
 
-  console.warn(`access denied: ${message} [${request.method} ${pathname}]`);
+  logEvent(
+    'access.denied',
+    { reason: message, method: request.method, path: pathname },
+    'warn',
+  );
 }
 
 /** Clears the memoized Access keys; tests use it to isolate cases. */

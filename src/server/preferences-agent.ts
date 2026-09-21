@@ -54,6 +54,7 @@ import {
   type ChatSession,
 } from '../shared/chat';
 import { evidenceSchema, storyCandidateSchema } from '../shared/inspection';
+import { boundedMessage, logEvent } from './log';
 import { z } from 'zod';
 
 /** Bindings used by the singleton preferences Agent. */
@@ -142,16 +143,23 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
       ),
     );
 
-    if (context === null)
+    if (context === null) {
+      logEvent('chat.failed', { reason: 'story-unavailable' }, 'warn');
+
       return new Response(
         'The story linked to this conversation is no longer available. Choose another story and try again.',
       );
+    }
 
-    if (this.env.AI === undefined)
+    if (this.env.AI === undefined) {
+      logEvent('chat.failed', { reason: 'model-unavailable' }, 'warn');
+
       return new Response('Workers AI is not configured for this Worker.', {
         status: 503,
       });
+    }
 
+    const modelStartedAt = Date.now();
     const response = await this.env.AI.run(briefingChatModel, {
       max_tokens: 650,
       messages: buildChatMessages(
@@ -170,6 +178,12 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
       { id: crypto.randomUUID(), role: 'assistant', content },
       'single-user',
     );
+    logEvent('chat.answered', {
+      sessionId: session.id,
+      grounded: answer !== null,
+      characters: content.length,
+      latencyMs: Date.now() - modelStartedAt,
+    });
 
     return new Response(content);
   }
@@ -398,9 +412,20 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
       );
 
       this.storeTopicProposal(proposal, userId);
+      logEvent('proposal.created', {
+        operation: request.scope.operation,
+        promptVersion: proposal.promptVersion,
+      });
 
       return { ok: true, proposal };
     } catch (caught) {
+      // The full diagnostic includes the model response; only the error is logged.
+      logEvent(
+        'proposal.failed',
+        { operation: request.scope.operation, reason: boundedMessage(caught) },
+        'warn',
+      );
+
       return {
         ok: false,
         error:
