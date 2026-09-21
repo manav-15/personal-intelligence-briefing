@@ -5,6 +5,12 @@ preferences, produces cited briefings, and supports saved follow-up conversation
 A Worker cron checks every fifteen minutes and generates the daily edition at the
 saved local time; manual generation stays available.
 
+## Deployed app
+
+[Open Personal Briefing](https://personal-intelligence-briefing.chiraniamanav15.workers.dev)
+
+The app is protected by Cloudflare Access, so an authorized session is required.
+
 ## What works
 
 - Independent topic add/edit/pause/delete, global reading and summary preferences,

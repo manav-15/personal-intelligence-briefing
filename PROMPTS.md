@@ -1673,3 +1673,12 @@ returned a cited answer. `npm run check` passes with 230 tests.
 development-build flag. Local development retains the inspection screen; a
 production build neither presents nor routes to it, while the existing
 production-disabled diagnostic API policy remains unchanged.
+
+### Deployed endpoint in README (2026-09-21)
+
+**User instruction (verbatim):** "Add the deployed worker endpoint in the readme as well"
+
+**Outcome:** Verified that
+`https://personal-intelligence-briefing.chiraniamanav15.workers.dev` redirects
+to the configured Cloudflare Access login, then added it to the README with an
+explicit authorized-session notice.
