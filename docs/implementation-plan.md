@@ -367,6 +367,22 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Reworked the grounded-chat prompt at the owner's request. It had told
+  the model to use no outside knowledge and never to claim to have read the article,
+  which the stored history shows it obeying literally: "I can only use the provided
+  text to answer questions. I don't have prior knowledge to draw upon." The prompt now
+  supplies two kinds of information — the briefing context including the retained
+  article extract, and the model's own general knowledge — requires knowledge to be
+  introduced with "Background:" instead of a source label, and states that it cannot
+  query the internet or any other source. Two supporting changes were needed:
+  `ensureChatCitation` no longer appends a source label to an answer already marked as
+  background, and the system prompt now names the latest question, because a
+  twenty-message session anchored the model on the previous thread and it answered the
+  wrong question twice. Verified in the browser: the article-text question returned
+  detail only the extract contains (2.3 seconds from 2.8, 60 languages, 29 speech and
+  31 text-only), a knowledge question answered under "Background:" with [S1] kept for
+  the story facts, and a lookup request was refused explicitly. Prompt policy version
+  2026-09-21.3.
 - **2026-09-21:** Put SearXNG back in service locally at the owner's direction, with
   Google News and Brave excluded, and verified a new topic end to end. The engine
   set needed the general `duckduckgo` engine added: with the news category alone,

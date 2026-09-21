@@ -1414,3 +1414,23 @@ five labelled description-tier items, the latter because msn.com, insidermonkey 
 atvtoday block retrieval. Diagnosed two operational issues — `bing news` raising
 HTTP connection errors on every query while still contributing intermittently, and a
 long-running instance going silent on all engines but reuters until restarted.
+
+### Chat may use article text and its own knowledge (2026-09-21)
+
+**User request (verbatim):** “Update the chat prompt to be able to use article text
+as well as information that it already has - it cannot query internet and other
+sources for now” and the clarification “BY information it already has, I mean the
+LLM knowledge and instrcution”
+
+**Outcome:** The system instruction now offers two information sources — the supplied
+briefing context including the retained article extract, and the model's own general
+knowledge — with a visible rule for separating them: knowledge is introduced as
+"Background:" and never carries a source label, while anything taken from the context
+is attributed [S1]-style. It also states that the app cannot query the internet or any
+other source and must say so when asked to look something up. `ensureChatCitation` now
+skips an answer already marked as background, so general knowledge cannot be
+attributed to a briefing source, and the context names the latest question because a
+long session anchored the model on the previous thread. Verified in the browser on a
+fresh conversation: article text answered in detail, a knowledge question answered
+under "Background:" with [S1] retained for story facts, and a lookup request refused
+with an explicit statement of no internet access.

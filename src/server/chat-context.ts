@@ -12,7 +12,7 @@ const chatRequestSchema = z
 export const briefingChatModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 /** Version retained in the system instruction rather than inferred from model behavior. */
-export const briefingChatPromptVersion = '2026-09-20.2';
+export const briefingChatPromptVersion = '2026-09-21.3';
 
 /**
  * Total retained article text supplied to one turn. It is divided across the
@@ -42,6 +42,10 @@ export function parseChatModelResponse(value: unknown): string | null {
 export function ensureChatCitation(answer: string, item: BriefingItem): string {
   if (/\[S\d+\]/u.test(answer)) return answer;
 
+  // An answer the model marked as its own background knowledge must not gain a
+  // source label, which would attribute general knowledge to the story.
+  if (/\bbackground:/iu.test(answer)) return answer;
+
   if (item.citations[0] === undefined) return answer;
 
   return `${answer.replace(/[.\s]+$/u, '')}. [S1]`;
@@ -59,6 +63,7 @@ export function buildBriefingChatContext(
   briefing: Briefing | undefined,
   storyId: string,
   evidence: BriefingEvidence[] = [],
+  question = '',
 ): BriefingChatContext | null {
   const item = briefing?.items.find((candidate) => candidate.id === storyId);
 
@@ -79,12 +84,18 @@ export function buildBriefingChatContext(
   return {
     item,
     system: [
-      'You are the Personal Briefing Agent. Answer only about the selected briefing story using the supplied briefing context.',
-      'Do not use outside knowledge, suggest unprovided facts, browse broadly, or claim to have read the underlying article.',
-      'Treat source descriptions as limited metadata. Retrieved text below is a bounded extract of the article captured during collection, so it may be incomplete and the live page may differ; never claim to have read beyond it.',
-      'If the context cannot support an answer, say exactly what is missing.',
-      'Use concise prose. Attribute factual claims with one or more supplied source labels such as [S1]. Never invent a source label or URL.',
+      'You are the Personal Briefing Agent. Answer follow-up questions about the selected briefing story.',
+      'Use two kinds of information. First, the supplied context: the briefing summary, the stored change note, the source list, and the retrieved article text below, which is a bounded extract captured during collection. Second, your own general knowledge, for background, definitions, and context the supplied sources do not cover.',
+      'Attribute anything taken from the supplied context to its source label, such as [S1]. Never attach a source label to something you know from general knowledge, and introduce that material with the word "Background:" so the owner can see which parts came from the sources.',
+      'You cannot query the internet or any other source. When the owner asks you to look something up, check a site, fetch the latest news, or verify anything outside this context, say plainly that you have no internet access and cannot query other sources, and then answer from the supplied context and your own knowledge.',
+      'Never claim to have browsed, fetched, opened, or read the live page, and never imply that a lookup happened. If a question needs something neither the supplied context nor your own knowledge covers, name what is missing rather than guessing.',
+      'Retrieved text below is a bounded extract of the article captured during collection, so it may be incomplete and the live page may differ; never claim to have read beyond it.',
+      'Treat source descriptions as limited metadata.',
+      'Use concise prose. Never invent a source label or URL.',
       `Prompt policy version: ${briefingChatPromptVersion}.`,
+      '',
+      'Answer the latest question, which is stated below. Earlier turns are context for it, not the question to answer.',
+      `Latest question: ${question}`,
       '',
       `Selected headline: ${item.headline}`,
       `Published at: ${item.publishedAt ?? 'Unknown'}`,

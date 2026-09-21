@@ -140,6 +140,7 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         session.storyId,
         'single-user',
       ),
+      question.content,
     );
 
     if (context === null)

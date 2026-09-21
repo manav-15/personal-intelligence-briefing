@@ -20,7 +20,11 @@ describe('briefing chat context', () => {
 
     expect(context.system).toContain('Example AI model release');
     expect(context.system).toContain('[S1] Example Publisher | article');
-    expect(context.system).toContain('Do not use outside knowledge');
+    expect(context.system).toContain(
+      'You cannot query the internet or any other source',
+    );
+    expect(context.system).toContain('your own general knowledge');
+    expect(context.system).toContain('"Background:"');
     expect(chatSources(context.item)).toEqual([
       {
         evidenceTier: 'article',
@@ -29,6 +33,23 @@ describe('briefing chat context', () => {
         sourceUrl: 'https://example.com/ai-model-release',
       },
     ]);
+  });
+
+  it('names the current question so earlier turns cannot displace it', () => {
+    const context = buildBriefingChatContext(
+      exampleBriefing,
+      'ai-model-release',
+      [],
+      'What changed since the last edition?',
+    );
+
+    if (context === null)
+      throw new Error('Expected selected chat story context.');
+
+    expect(context.system).toContain(
+      'Latest question: What changed since the last edition?',
+    );
+    expect(context.system).toContain('Earlier turns are context for it');
   });
 
   it('supplies retained article text with its retrieval time and source label', () => {
@@ -134,5 +155,14 @@ describe('briefing chat context', () => {
     expect(ensureChatCitation('A grounded answer [S1].', item)).toBe(
       'A grounded answer [S1].',
     );
+  });
+
+  it('leaves a knowledge-only answer unlabelled instead of attributing it to a source', () => {
+    const item = exampleBriefing.items[0];
+
+    if (item === undefined) throw new Error('Expected a fixture story.');
+    expect(
+      ensureChatCitation('Background: the company was founded in 2015.', item),
+    ).toBe('Background: the company was founded in 2015.');
   });
 });
