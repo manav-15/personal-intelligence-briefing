@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { briefingSchema } from '../shared/briefings';
 import {
+  deleteBriefing,
   generateBriefing,
   listBriefingArchive,
   readBriefingRunStatus,
@@ -65,7 +66,8 @@ describe('briefing client', () => {
           failureMessage: null,
           collectionFailures: [],
         }),
-      );
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     vi.stubGlobal('fetch', fetcher);
 
@@ -81,6 +83,9 @@ describe('briefing client', () => {
       runId: exampleBriefing.runId,
       status: 'running',
     });
+    await expect(
+      deleteBriefing(exampleBriefing.runId),
+    ).resolves.toBeUndefined();
     expect(fetcher).toHaveBeenNthCalledWith(1, '/api/briefings/today');
     expect(fetcher).toHaveBeenNthCalledWith(2, '/api/briefings/archive');
     expect(fetcher).toHaveBeenNthCalledWith(3, '/api/briefings/generate', {
@@ -89,6 +94,11 @@ describe('briefing client', () => {
     expect(fetcher).toHaveBeenNthCalledWith(
       4,
       `/api/briefings/runs/${exampleBriefing.runId}`,
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      5,
+      `/api/briefings/${exampleBriefing.runId}`,
+      { method: 'DELETE' },
     );
   });
 });

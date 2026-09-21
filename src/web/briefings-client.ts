@@ -58,6 +58,15 @@ export async function listBriefingArchive(): Promise<BriefingArchiveEntry[]> {
   return briefingArchiveSchema.parse(await response.json()).briefings;
 }
 
+/** Permanently deletes one retained briefing edition. */
+export async function deleteBriefing(runId: string): Promise<void> {
+  const response = await fetch(`/api/briefings/${encodeURIComponent(runId)}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) throw new Error('Could not delete this briefing.');
+}
+
 /** Restores the most recent durable run after navigation or reload. */
 export async function readCurrentBriefingRun(): Promise<BriefingRunStatusResponse | null> {
   const response = await fetch('/api/briefings/current-run');

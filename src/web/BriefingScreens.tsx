@@ -6,7 +6,11 @@ import type {
   BriefingItem,
   BriefingRunStatusResponse,
 } from '../shared/briefings';
-import { listBriefingArchive, readArchivedBriefing } from './briefings-client';
+import {
+  deleteBriefing,
+  listBriefingArchive,
+  readArchivedBriefing,
+} from './briefings-client';
 import { useBriefing } from './useBriefing';
 import { usePreferences } from './usePreferences';
 
@@ -120,6 +124,30 @@ export function ArchiveScreen() {
   );
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+
+  async function removeBriefing(entry: BriefingArchiveEntry) {
+    if (
+      !window.confirm(
+        `Delete the ${friendlyDate(entry.date)} briefing? Its saved story sources will be removed, but its chat transcripts will be kept.`,
+      )
+    )
+      return;
+
+    setDeletingRunId(entry.runId);
+
+    try {
+      await deleteBriefing(entry.runId);
+      setBriefings(
+        (current) =>
+          current?.filter((briefing) => briefing.runId !== entry.runId) ?? null,
+      );
+    } catch {
+      setError(true);
+    } finally {
+      setDeletingRunId(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -179,7 +207,15 @@ export function ArchiveScreen() {
                   })}
                 </span>
               </Link>
-              <span aria-hidden="true">→</span>
+              <button
+                disabled={deletingRunId !== null}
+                onClick={() => {
+                  void removeBriefing(entry);
+                }}
+                type="button"
+              >
+                {deletingRunId === entry.runId ? 'Deleting…' : 'Delete'}
+              </button>
             </li>
           ))}
         </ul>

@@ -47,6 +47,8 @@ const applyTopicProposal = vi.fn<
 const discardTopicProposal = vi.fn(() => ({ ok: true as const }));
 const readTodayBriefing = vi.fn<() => Briefing | undefined>(() => undefined);
 const listBriefingArchive = vi.fn<() => BriefingArchiveEntry[]>(() => []);
+const deleteBriefing = vi.fn(() => true);
+const deleteAllBriefings = vi.fn(() => 0);
 const reserveManualBriefingRun = vi.fn(() => ({
   ok: true as const,
   runId: 'ad7fb1a7-9d5d-4cbe-a571-c8e3a0d0f0ee',
@@ -122,6 +124,8 @@ const env = {
       discardTopicProposal,
       readTodayBriefing,
       listBriefingArchive,
+      deleteBriefing,
+      deleteAllBriefings,
       reserveManualBriefingRun,
       failBriefingRun,
       readBriefingRunStatus,
@@ -368,7 +372,6 @@ describe('HTTP policy compatibility', () => {
     '/api/inspection/missing',
     '/api/inspection/search/',
     '/api/inspection',
-    '/api/briefings',
     '/api/briefings/today/',
   ])('keeps unknown route %s JSON for every method', async (path) => {
     for (const method of ['GET', 'POST', 'HEAD', 'OPTIONS']) {
@@ -568,6 +571,32 @@ describe('HTTP policy compatibility', () => {
         },
       ],
     });
+  });
+
+  it('deletes one or all owner-scoped briefing editions', async () => {
+    const one = await app.fetch(
+      new Request(`${origin}/api/briefings/${exampleBriefing.runId}`, {
+        method: 'DELETE',
+      }),
+      env,
+    );
+    const all = await app.fetch(
+      new Request(origin + '/api/briefings', { method: 'DELETE' }),
+      env,
+    );
+    const invalid = await app.fetch(
+      new Request(origin + '/api/briefings/not-a-uuid', { method: 'DELETE' }),
+      env,
+    );
+
+    expect(one.status).toBe(204);
+    expect(all.status).toBe(204);
+    expect(deleteBriefing).toHaveBeenCalledWith(
+      exampleBriefing.runId,
+      'single-user',
+    );
+    expect(deleteAllBriefings).toHaveBeenCalledWith('single-user');
+    expect(invalid.status).toBe(400);
   });
 
   it.each(['null', '[]', '"text"', '42', '{'])(

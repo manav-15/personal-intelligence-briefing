@@ -491,6 +491,38 @@ describe('persistence document contract', () => {
     ).toEqual([]);
   });
 
+  it('deletes only owned editions, evidence, candidates, and runs while detaching chats', () => {
+    const agent = configuredAgent();
+    const runId = 'd37fa5aa-1f5e-446f-a0ee-a21d92d7b230';
+
+    agent.startBriefingRun({ runId, preferenceRevision: 1 }, 'test-user');
+    publishEdition(agent, runId, '2026-09-19', 1);
+    const session = agent.createChatSession(
+      runId,
+      'example-story',
+      'test-user',
+    );
+
+    if (session === undefined) throw new Error('Expected a chat session.');
+    expect(agent.deleteBriefing(runId, 'another-user')).toBe(false);
+    expect(agent.deleteBriefing(runId, 'test-user')).toBe(true);
+    expect(agent.readBriefingByRun(runId, 'test-user')).toBeUndefined();
+    expect(
+      agent.readBriefingEvidence(runId, 'example-story', 'test-user'),
+    ).toEqual([]);
+    expect(agent.listBriefingArchive('test-user')).toEqual([]);
+    expect(agent.listChatSessions('test-user')).toMatchObject([
+      { id: session.id, briefingRunId: null },
+    ]);
+    expect(
+      testDatabase(agent).prepare('SELECT * FROM briefing_runs').all(),
+    ).toEqual([]);
+    expect(agent.deleteAllBriefings('test-user')).toBe(0);
+    expect(agent.readPreferences('test-user')).toMatchObject({
+      configured: true,
+    });
+  });
+
   it('keeps source-scoped chat sessions and messages after a briefing is archived', () => {
     const agent = inMemoryAgent();
     const saved = agent.replacePreferences(examplePreferences, 0, 'test-user');

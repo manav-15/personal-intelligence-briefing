@@ -91,6 +91,8 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
     (story) => story.id === selectedStoryId,
   );
   const busy = isStreaming || isRecovering || changingConversation;
+  const detachedSession = isDetachedSession(session);
+  const composer = chatComposerState(busy, detachedSession);
 
   useEffect(() => {
     void loadChatData()
@@ -156,6 +158,18 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
   }
 
   async function openConversation(nextSession: ChatSession) {
+    if (nextSession.briefingRunId === null) {
+      const history = await readChatSession(nextSession.id);
+
+      setSession(history.session);
+      setMessages(history.messages);
+      setActionError(
+        'This briefing was deleted. Its saved messages remain available, but its source context is gone.',
+      );
+
+      return;
+    }
+
     const [history, edition] = await Promise.all([
       readChatSession(nextSession.id),
       readArchivedBriefing(nextSession.briefingRunId),
@@ -347,7 +361,7 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
                 <label>
                   Your question
                   <textarea
-                    disabled={busy}
+                    disabled={composer.disabled}
                     maxLength={2_000}
                     onChange={(event) => {
                       setInput(event.target.value);
@@ -378,7 +392,7 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
                         );
                       });
                     }}
-                    placeholder="Ask a follow-up about the selected story"
+                    placeholder={composer.placeholder}
                     value={input}
                   />
                 </label>
@@ -387,7 +401,10 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
                   line.
                 </p>
                 <div>
-                  <button disabled={busy || !input.trim()} type="submit">
+                  <button
+                    disabled={composer.disabled || !input.trim()}
+                    type="submit"
+                  >
                     {busy ? 'Answering…' : 'Ask question'}
                   </button>
                   <button
@@ -407,6 +424,31 @@ function ChatConversation({ ownerId }: { ownerId: string }) {
       </div>
     </section>
   );
+}
+
+/** Keeps input disabled when a retained transcript no longer has briefing evidence. */
+function chatComposerState(
+  busy: boolean,
+  detached: boolean,
+): {
+  disabled: boolean;
+  placeholder: string;
+} {
+  if (detached)
+    return {
+      disabled: true,
+      placeholder: 'This conversation’s source was deleted',
+    };
+
+  return {
+    disabled: busy,
+    placeholder: 'Ask a follow-up about the selected story',
+  };
+}
+
+/** Identifies a transcript whose source edition has been permanently deleted. */
+function isDetachedSession(session: ChatSession | null): boolean {
+  return session?.briefingRunId === null;
 }
 
 /** Loads today's edition first, the newest saved edition, and retained conversations. */

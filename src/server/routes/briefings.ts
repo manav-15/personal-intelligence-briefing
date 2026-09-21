@@ -63,6 +63,16 @@ briefingsRoutes.get('/archive', async (c) => {
   });
 });
 
+briefingsRoutes.all('/', allowMethods('DELETE'));
+briefingsRoutes.delete('/', async (c) => {
+  const binding = c.get('binding');
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+
+  await agent.deleteAllBriefings(c.get('userId'));
+
+  return c.body(null, 204);
+});
+
 briefingsRoutes.all('/generate', allowMethods('POST'));
 
 briefingsRoutes.post('/generate', async (c) => {
@@ -160,6 +170,22 @@ briefingsRoutes.get('/archive/:runId', async (c) => {
     return c.json({ error: 'Briefing not found.' }, 404);
 
   return c.json({ briefing });
+});
+
+briefingsRoutes.all('/:runId', allowMethods('DELETE'));
+briefingsRoutes.delete('/:runId', async (c) => {
+  const runId = briefingRunStatusResponseSchema.shape.runId.safeParse(
+    c.req.param('runId'),
+  );
+
+  if (!runId.success) return c.json({ error: 'Invalid briefing ID.' }, 400);
+  const binding = c.get('binding');
+  const agent = binding.get(binding.idFromName(c.get('userId')));
+  const deleted = await agent.deleteBriefing(runId.data, c.get('userId'));
+
+  return deleted
+    ? c.body(null, 204)
+    : c.json({ error: 'Briefing not found.' }, 404);
 });
 
 async function reconcileWorkflow(

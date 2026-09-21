@@ -19,6 +19,9 @@ saved local time; manual generation stays available.
   failure. Manual generation is unchanged.
 - Story-scoped saved chat with retained evidence, the latest 12 messages as model
   history, and the latest 200 messages displayed. Conversations can be deleted.
+- Archive controls permanently delete one briefing edition. This also removes its
+  retained evidence and run data; chats are preserved as transcripts but no
+  longer have source context for new answers.
 - Cloudflare Access identity verification and owner-scoped HTTP/Agent routing.
   The app intentionally shares one dataset among all admitted identities.
 
@@ -74,11 +77,12 @@ authorized Access service token; never commit their values. See
 2. Optionally ask for a topic change, review the proposal, and apply it.
 3. On Today, generate a briefing and wait for its terminal status.
 4. Inspect citations and any incomplete-coverage notice; open Archive to revisit
-   an edition.
+   or permanently delete an edition.
 5. Open Chat, select a story, start a conversation, and ask a follow-up. Reload to
    verify persistence. Failed requests show an error so the question can be retried.
 
-Content lab is a local inspection tool. `/api/inspection/*` and
+Content lab is a development-only inspection tool; it is not shown or routed in
+the production UI. `/api/inspection/*` and
 `/api/feasibility/*` require the inspection flag; feasibility additionally requires
 identity. Deployment leaves diagnostic flags unset. Agent routes validate the
 personal-briefing binding and resolved owner for every suffix and reject foreign
@@ -89,7 +93,7 @@ origins, including WebSocket handshakes. The chat screen reads that owner from
 ## Validation
 
 The current working tree passes the complete `npm run check` gate — formatting,
-lint, strict type checks, 228 tests and a production build — on Node 24, plus
+lint, strict type checks, 231 tests and a production build — on Node 24, plus
 live local Worker checks of the diagnostic and Agent routing boundaries. The same
 gate runs in GitHub Actions on every push (`.github/workflows/ci.yml`). Verifying
 the suite from a relocated checkout remains TEST-01. See the

@@ -5,10 +5,10 @@ const runId = z.uuid();
 const storyId = z.string().trim().min(1).max(200);
 const messageText = z.string().trim().min(1).max(8_000);
 
-/** A durable conversation scoped to one cited story in one saved briefing. */
+/** A durable conversation that retains its original story metadata after its briefing is deleted. */
 export const chatSessionSchema = z.strictObject({
   id: sessionId,
-  briefingRunId: runId,
+  briefingRunId: runId.nullable(),
   briefingDate: z.iso.date(),
   storyId,
   storyHeadline: z.string().trim().min(1).max(500),

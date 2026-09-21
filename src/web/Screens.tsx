@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { Inspection } from './Inspection';
+import { contentLabEnabled } from './runtime-features';
 
 const navigation = [
   ['/', 'Today'],
@@ -8,7 +9,6 @@ const navigation = [
   ['/topics', 'Topics'],
   ['/archive', 'Archive'],
   ['/settings', 'Memory & settings'],
-  ['/inspect', 'Content lab'],
 ] as const;
 
 /** Shared routed shell; future screens receive Agent-backed data through this module. */
@@ -24,7 +24,10 @@ export function AppShell({ connection }: { connection: string }) {
         </span>
       </header>
       <nav aria-label="Primary navigation">
-        {navigation.map(([to, label]) => (
+        {[
+          ...navigation,
+          ...(contentLabEnabled ? [['/inspect', 'Content lab']] : []),
+        ].map(([to, label]) => (
           <NavLink key={to} to={to} end={to === '/'}>
             {label}
           </NavLink>

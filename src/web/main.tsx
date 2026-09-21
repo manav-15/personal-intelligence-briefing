@@ -10,6 +10,7 @@ import {
 import { SettingsScreen, TopicsScreen } from './PreferencesScreens';
 import { InspectScreen } from './Screens';
 import { ChatScreen } from './ChatScreen';
+import { contentLabEnabled } from './runtime-features';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -28,7 +29,9 @@ createRoot(root).render(
           <Route path="archive" element={<ArchiveScreen />} />
           <Route path="archive/:runId" element={<ArchivedBriefingScreen />} />
           <Route path="settings" element={<SettingsScreen />} />
-          <Route path="inspect" element={<InspectScreen />} />
+          {contentLabEnabled && (
+            <Route path="inspect" element={<InspectScreen />} />
+          )}
         </Route>
         <Route
           path="*"

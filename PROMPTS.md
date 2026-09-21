@@ -1656,3 +1656,20 @@ mounting the transport, because `useAgent` would otherwise connect to the `defau
 `PRIMARY_USER_ID=owner-1` on a local Worker now yields `/api/identity → owner-1`, a 101 handshake on
 `/agents/personal-briefing/owner-1`, and a 404 on the previously hardcoded `single-user` path; a browser chat turn
 returned a cited answer. `npm run check` passes with 230 tests.
+
+### Briefing archive deletion (2026-09-21)
+
+**User instruction (verbatim):** "create a delete briefing button and API. i want to be able to delete a briefing from the archive"
+
+**Material coding prompt:** Add owner-scoped, same-origin, identity-checked `DELETE /api/briefings/:runId` for one edition and `DELETE /api/briefings` for all editions. Delete `briefing_evidence`, `briefing_candidates`, `briefings`, and `briefing_runs` in one `transactionSync`; keep conversations by detaching their edition reference. Update tests, docs, and the retention backlog.
+
+**Outcome:** Added migration 11 for nullable chat briefing references; Agent deletion methods remove owned edition data atomically and retain detached chat transcripts; Hono DELETE routes and an Archive confirmation control call the owner-scoped API. Detached chats remain readable but cannot initiate a new grounded answer. Tests and project records were updated; final validation is recorded with this increment.
+
+### Production Content lab removal (2026-09-21)
+
+**User instruction (verbatim):** "Disable content lab from prod UI"
+
+**Outcome:** The Content lab link and `/inspect` route are now guarded by Vite's
+development-build flag. Local development retains the inspection screen; a
+production build neither presents nor routes to it, while the existing
+production-disabled diagnostic API policy remains unchanged.

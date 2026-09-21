@@ -322,14 +322,16 @@ the private Container remains the deployed path. Google News RSS and GDELT were
 retired with the SearXNG-only decision. The bounded scheduler rotates topics and providers; see
 [DISC-07](data-pipeline.md#9-improvement-backlog).
 
-## Local inspection integration
+## Development-only inspection integration
 
-The React content lab calls `GET /api/inspection/search`, then explicitly
-requests one candidate through `POST /api/inspection/evidence`. Search does
-not automatically fetch publishers. Shared Zod contracts validate both edges.
-The SearXNG provider is the only implementation in `src/server/discovery`.
-Requests, response bytes, candidate counts, and extraction lengths are bounded.
-Partial engine failures remain visible alongside successful results.
+In a Vite development build, the React Content lab calls
+`GET /api/inspection/search`, then explicitly requests one candidate through
+`POST /api/inspection/evidence`. Production builds do not show or route to that
+screen. Search does not automatically fetch publishers. Shared Zod contracts
+validate both edges. The SearXNG provider is the only implementation in
+`src/server/discovery`. Requests, response bytes, candidate counts, and
+extraction lengths are bounded. Partial engine failures remain visible alongside
+successful results.
 
 Diagnostic routes require `INSPECTION_ENABLED=true` and reject cross-origin
 browser requests; leave them disabled in deployment. These controls are local
@@ -343,6 +345,12 @@ Today and Archive share one reading component. Immutable briefings optionally
 carry snapshotted topic names; older payloads retain compatibility through readable
 ID fallbacks. Archive detail reads are owner-scoped by run UUID. Today remains an
 exact server-timezone date lookup, with an explicitly dated prior-edition link.
+
+An owner can permanently delete one archive edition or all of their editions.
+Deletion is one Agent SQLite transaction: retained evidence, temporary
+candidates, briefing data, and its run are removed in dependency order. Saved
+chat transcripts are retained with a null edition reference, so they remain
+readable but cannot support another grounded answer. Preferences are unaffected.
 
 The browser recovers the latest durable run and polls sequentially, including a
 successful edition read before declaring publication complete. Terminal Workflow

@@ -299,6 +299,12 @@ work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
 
+Update log: 2026-09-21 (tenth entry) — added owner-scoped archive deletion for
+one or all editions, preserving detached chat transcripts while deleting the
+edition, evidence, candidates, and run atomically; then limited Content lab to
+Vite development builds and deployed both updates. `npm run check` passed with
+231 tests before deployment.
+
 Update log: 2026-09-21 (ninth entry) — implemented the `*/15 * * * *` Worker cron
 with an Agent-side due-check and a `trigger` column, so the daily edition no
 longer depends on a manual request; recorded that manual generation, its
@@ -1611,8 +1617,8 @@ Remaining gaps before a hosted deployment:
    `dist/<worker>/wrangler.json` whose relative paths do not all resolve.
 3. **Operational blind spots.** No `observability` block, so hosted logs are not
    retained; nothing measures hosted usage against the sub-USD-10–20 target
-   (COST-01); and there is still no deletion path for briefings, retained
-   evidence, or the unimplemented 90-day deduplication memory (STORE-01).
+   (COST-01); and the 90-day deduplication-memory deletion policy remains open
+   (STORE-01).
 
 ### Phases
 
@@ -1757,6 +1763,39 @@ the BRIEF-01 same-day duplicate path; and STORE-01 retention/deletion including
 the unimplemented 90-day deduplication memory. _Acceptance:_ a scheduled-style
 repeated run cannot lose an edition to one contradictory model item and cannot
 republish an already-covered citation.
+
+### Briefing archive deletion (2026-09-21)
+
+Status: implemented, pending user review. `DELETE /api/briefings/:runId` deletes
+one owner-scoped edition and `DELETE /api/briefings` deletes all of that owner's
+editions. Migration 11 makes a saved chat's `briefing_run_id` nullable. In one
+Agent SQLite transaction, deletion detaches those chats and removes
+`briefing_evidence`, `briefing_candidates`, `briefings`, and `briefing_runs` in
+dependency order. Preferences and chat messages remain. The Archive screen asks
+for confirmation before deleting an edition and removes it from the list after a
+successful request.
+
+Validation: Agent tests cover owner isolation, evidence/run removal, detached
+chat retention, and preserved preferences; route and browser-client tests cover
+the two DELETE contracts. `npm run check` passes with 231 tests and a production
+build.
+
+Limitation: deleting history deliberately weakens future prior-coverage matching,
+so a later briefing can resurface a story that would otherwise be recognized as
+already covered. Detached chats retain their messages but cannot answer new
+source-grounded questions. The remaining retention decisions stay in STORE-01.
+
+### Production Content lab removal (2026-09-21)
+
+Status: implemented, pending user review. The Content lab navigation link and
+`/inspect` browser route now exist only in Vite development builds. The local
+screen and its opt-in Worker inspection APIs remain available during local
+development; production builds show the normal not-found screen at that path,
+while their diagnostic APIs remain disabled without `INSPECTION_ENABLED`.
+
+Validation: `npm run check` passes with 231 tests and a production build. The
+production client bundle contains none of the Content lab UI or inspection-route
+strings.
 
 ### Deferred to a later increment
 

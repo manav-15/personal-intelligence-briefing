@@ -144,6 +144,11 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         'That saved conversation is unavailable. Choose another story and try again.',
       );
 
+    if (session.briefingRunId === null)
+      return new Response(
+        'The briefing source for this conversation was deleted. Its saved messages are still available, but it cannot answer follow-up questions.',
+      );
+
     const question = latestChatQuestion(this.messages);
 
     if (question === null)
@@ -1196,6 +1201,72 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     return briefingSchema.parse(JSON.parse(row.document) as unknown);
   }
 
+  /** Deletes one owned published edition and its retained evidence, while preserving detached chat transcripts. */
+  deleteBriefing(runId: string, userId: UserId): boolean {
+    this.ensureSchema();
+
+    return this.ctx.storage.transactionSync(() => {
+      const briefing = [
+        ...this.ctx.storage.sql.exec<{ run_id: string }>(
+          `SELECT run_id FROM briefings WHERE run_id = ? AND user_id = ?`,
+          runId,
+          userId,
+        ),
+      ][0];
+
+      if (briefing === undefined) return false;
+
+      this.deleteBriefingRows(runId, userId);
+
+      return true;
+    });
+  }
+
+  /** Deletes every owned published edition without affecting preferences or chat transcripts. */
+  deleteAllBriefings(userId: UserId): number {
+    this.ensureSchema();
+
+    return this.ctx.storage.transactionSync(() => {
+      const runIds = [
+        ...this.ctx.storage.sql.exec<{ run_id: string }>(
+          `SELECT run_id FROM briefings WHERE user_id = ?`,
+          userId,
+        ),
+      ].map((row) => row.run_id);
+
+      for (const runId of runIds) this.deleteBriefingRows(runId, userId);
+
+      return runIds.length;
+    });
+  }
+
+  /** Removes one publication's dependent records in foreign-key-safe order. */
+  private deleteBriefingRows(runId: string, userId: UserId): void {
+    this.ctx.storage.sql.exec(
+      `UPDATE chat_sessions SET briefing_run_id = NULL WHERE briefing_run_id = ? AND user_id = ?`,
+      runId,
+      userId,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM briefing_evidence WHERE run_id = ?`,
+      runId,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM briefing_candidates WHERE run_id = ?`,
+      runId,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM briefings WHERE run_id = ? AND user_id = ?`,
+      runId,
+      userId,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM briefing_runs WHERE id = ? AND user_id = ?`,
+      runId,
+      userId,
+    );
+  }
+
   /** Stores the already validated proposal payload for later explicit review. */
   private storeTopicProposal(
     proposal: StoredTopicProposal,
@@ -1538,7 +1609,44 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
           `INSERT INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'))`,
         );
       }
+
+      if (!hasMigration(11)) {
+        this.migrateChatSessionsToAllowBriefingDeletion();
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (11, datetime('now'))`,
+        );
+      }
     });
+  }
+
+  /** Rebuilds chat tables so a transcript may outlive its source briefing. */
+  private migrateChatSessionsToAllowBriefingDeletion(): void {
+    this.ctx.storage.sql.exec(
+      `ALTER TABLE chat_messages RENAME TO chat_messages_v1`,
+    );
+    this.ctx.storage.sql.exec(
+      `ALTER TABLE chat_sessions RENAME TO chat_sessions_v1`,
+    );
+    this.ctx.storage.sql.exec(
+      `CREATE TABLE chat_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, briefing_run_id TEXT, briefing_date TEXT NOT NULL, story_id TEXT NOT NULL, story_headline TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY (briefing_run_id) REFERENCES briefings(run_id))`,
+    );
+    this.ctx.storage.sql.exec(
+      `INSERT INTO chat_sessions (id, user_id, briefing_run_id, briefing_date, story_id, story_headline, created_at, updated_at) SELECT id, user_id, briefing_run_id, briefing_date, story_id, story_headline, created_at, updated_at FROM chat_sessions_v1`,
+    );
+    this.ctx.storage.sql.exec(
+      `CREATE TABLE chat_messages (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (session_id) REFERENCES chat_sessions(id))`,
+    );
+    this.ctx.storage.sql.exec(
+      `INSERT INTO chat_messages (id, session_id, role, content, created_at) SELECT id, session_id, role, content, created_at FROM chat_messages_v1`,
+    );
+    this.ctx.storage.sql.exec(`DROP TABLE chat_messages_v1`);
+    this.ctx.storage.sql.exec(`DROP TABLE chat_sessions_v1`);
+    this.ctx.storage.sql.exec(
+      `CREATE INDEX chat_sessions_latest_by_user ON chat_sessions (user_id, updated_at DESC)`,
+    );
+    this.ctx.storage.sql.exec(
+      `CREATE INDEX chat_messages_by_session ON chat_messages (session_id, created_at ASC)`,
+    );
   }
 }
 
