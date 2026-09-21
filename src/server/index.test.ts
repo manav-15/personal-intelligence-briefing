@@ -3,11 +3,13 @@ import { healthSchema } from '../shared/health';
 import worker from './index';
 
 describe('Worker HTTP interface', () => {
-  it('rejects unknown discovery providers before making external requests', async () => {
+  it('rejects an invalid feasibility query before making external requests', async () => {
     const response = await worker.fetch(
-      new Request(
-        'https://briefing.test/api/feasibility/discovery?provider=unknown',
-      ),
+      new Request('https://briefing.test/api/feasibility/discovery?q=a'),
+      {
+        INSPECTION_ENABLED: 'true',
+        PREFERENCES_DIAGNOSTICS_ENABLED: 'true',
+      },
     );
 
     expect(response.status).toBe(400);

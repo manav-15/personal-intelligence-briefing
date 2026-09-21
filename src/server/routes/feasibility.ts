@@ -1,31 +1,53 @@
 import { Hono, type Context } from 'hono';
-import { discoverGdelt, discoverGoogleNews } from '../discovery';
+import { inspectionSearchSchema } from '../../shared/inspection';
+import { discoverSearxng } from '../discovery';
 import { retrieveEvidence } from '../evidence';
-import { allowMethods, type HttpEnv } from './policy';
+import {
+  allowMethods,
+  diagnosticEnabled,
+  noStore,
+  requireIdentity,
+  sameOrigin,
+  type HttpEnv,
+} from './policy';
 
-/** Existing discovery probe; provider and evidence behavior remains in domain modules. */
+/**
+ * Local-only probe for the one real discovery provider: it searches the
+ * configured SearXNG instance and reports the evidence outcome of each lead.
+ * It is hidden before identity, origin, method, or input validation.
+ */
 export const feasibilityRoutes = new Hono<HttpEnv>();
+feasibilityRoutes.use(
+  '*',
+  noStore,
+  diagnosticEnabled('INSPECTION_ENABLED', 'Local feasibility is disabled.'),
+  requireIdentity,
+  sameOrigin('Cross-origin feasibility access is not allowed.'),
+);
 feasibilityRoutes.all('/discovery', allowMethods('GET'));
 feasibilityRoutes.get('/discovery', discoveryHandler);
 
 async function discoveryHandler(c: Context<HttpEnv>): Promise<Response> {
   const url = new URL(c.req.url);
-  const query = url.searchParams.get('q') ?? 'artificial intelligence';
-  const maxResults = parseResultLimit(url.searchParams.get('limit'));
-  const provider = url.searchParams.get('provider') ?? 'google-news';
+  const input = inspectionSearchSchema.safeParse({
+    query: url.searchParams.get('q') ?? 'artificial intelligence',
+    maxResults: Number(url.searchParams.get('limit') ?? '5'),
+    timeRange: 'any',
+  });
 
-  if (provider !== 'google-news' && provider !== 'gdelt') {
+  if (!input.success)
     return c.json(
-      { error: 'Unknown discovery provider. Use google-news or gdelt.' },
+      { error: 'Invalid feasibility query. Use 2–200 characters.' },
       400,
     );
-  }
 
   c.header('Cache-Control', 'no-store');
 
   try {
-    const discover = provider === 'gdelt' ? discoverGdelt : discoverGoogleNews;
-    const discovery = await discover({ query, maxResults });
+    const discovery = await discoverSearxng(
+      input.data,
+      c.env.SEARXNG_BASE_URL ?? 'http://127.0.0.1:8080',
+    );
     const evidence = await Promise.all(
       discovery.stories.map(async (story) => ({
         title: story.title,
@@ -37,8 +59,8 @@ async function discoveryHandler(c: Context<HttpEnv>): Promise<Response> {
 
     return c.json(
       {
-        query,
-        provider,
+        query: input.data.query,
+        provider: 'searxng',
         candidates: discovery.stories.length,
         failures: discovery.failures,
         evidence: evidence.map((entry) => ({
@@ -61,15 +83,6 @@ async function discoveryHandler(c: Context<HttpEnv>): Promise<Response> {
       200,
     );
   } catch {
-    return c.json(
-      { error: 'Invalid feasibility query. Use 2–200 characters.' },
-      400,
-    );
+    return c.json({ error: 'Local SearXNG configuration is invalid.' }, 503);
   }
-}
-
-function parseResultLimit(value: string | null): number {
-  const parsed = Number(value);
-
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 5 ? parsed : 5;
 }

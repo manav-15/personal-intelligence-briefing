@@ -1,10 +1,12 @@
 import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   resolve: {
     alias: {
-      'cloudflare:workers':
-        '/Users/manav/sideHustles/cloudflare-assignment/src/test/cloudflare-workers.ts',
+      'cloudflare:workers': fileURLToPath(
+        new URL('./src/test/cloudflare-workers.ts', import.meta.url),
+      ),
     },
   },
   test: {

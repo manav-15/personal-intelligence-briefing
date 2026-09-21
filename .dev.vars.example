@@ -3,3 +3,7 @@ INSPECTION_ENABLED=true
 SEARXNG_BASE_URL=http://127.0.0.1:8080
 # Local-only, mutable preference diagnostics. Keep unset for deployment.
 PREFERENCES_DIAGNOSTICS_ENABLED=true
+
+# Override committed production Access settings for the explicit local owner.
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=

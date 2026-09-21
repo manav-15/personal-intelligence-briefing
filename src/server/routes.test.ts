@@ -198,7 +198,7 @@ describe('HTTP policy compatibility', () => {
     ],
     ['/api/inspection/search', 'GET', 'no-store'],
     ['/api/inspection/evidence', 'POST', 'no-store'],
-    ['/api/feasibility/discovery', 'GET', null],
+    ['/api/feasibility/discovery', 'GET', 'no-store'],
     ['/api/briefings/today', 'GET', 'no-store'],
     ['/api/briefings/archive', 'GET', 'no-store'],
     ['/api/chats', 'GET, POST', 'no-store'],
@@ -358,7 +358,9 @@ describe('HTTP policy compatibility', () => {
       );
       expect(response.headers.get('Allow')).toBeNull();
       expect(response.headers.get('Cache-Control')).toBe(
-        path.startsWith('/api/inspection/') || path.startsWith('/api/briefings')
+        path.startsWith('/api/inspection/') ||
+          path.startsWith('/api/briefings') ||
+          path.startsWith('/api/feasibility/')
           ? 'no-store'
           : null,
       );
