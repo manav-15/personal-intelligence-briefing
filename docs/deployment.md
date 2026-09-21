@@ -2,8 +2,9 @@
 
 The current production configuration uses Workers Static Assets, a personal SQLite Durable Object, a
 briefing Workflow, Workers AI, and one private SearXNG Container. Generation is
-manual. The restored Container configuration has not yet been deployed or
-hosted-verified. Deployment remains a separately reviewed action.
+manual. The Container and the Worker are deployed (2026-09-21); a hosted
+generation through the Container has not been run yet, so hosted engine coverage
+remains unverified (DISC-10). Deployment remains a separately reviewed action.
 
 ## Account prerequisites
 

@@ -29,8 +29,8 @@ React, TypeScript, Vite and Hono run on Workers Static Assets. The personal Agen
 owns SQLite persistence in a Durable Object; a Workflow performs collection,
 composition and publication. Workers AI supplies the model. Production SearXNG
 is configured to run in a private Cloudflare Container accessed only through a
-Worker binding; this restored Container path has not yet been deployed.
-Local Docker uses the same pinned image and settings.
+Worker binding, and is deployed with the Worker; hosted engine coverage is still
+unverified (DISC-10). Local Docker uses the same pinned image and settings.
 
 ## Local setup
 

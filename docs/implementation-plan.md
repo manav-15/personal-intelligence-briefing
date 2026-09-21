@@ -95,6 +95,24 @@ startup, secret configuration and generation verification remain DISC-10 /
 DEPLOY-01. No hosted generation, new remote AI inference, or deployment was
 performed.
 
+### Deployment performed (2026-09-21, after review)
+
+`SEARXNG_SECRET` was generated and stored as a Worker secret, the pinned SearXNG
+image was built and pushed to the Cloudflare registry, and `npm run deploy`
+published Worker version `3896ea3a-2b1c-49a0-8565-407c9a3c3181` with the
+container application `personal-intelligence-briefing-searxngcontainer`
+(`instance_type: lite`, `max_instances: 1`, tiers 1-2) to
+`personal-intelligence-briefing.chiraniamanav15.workers.dev`. The Access policy
+answers 302 to the login flow for `/`, `/api/health`, and `/api/briefings/today`,
+so the hostname is protected before the Worker runs. Containers require a Workers
+Paid plan; the previous free-tier decision is therefore superseded by this
+deployment.
+
+Not yet verified: a hosted generation through the Container. `wrangler
+containers instances` reports no live instance because the Container starts on
+demand, and the only caller is the authenticated generation route, so the check
+needs a signed-in session or an Access service token.
+
 ### Scope and next slice
 
 Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and

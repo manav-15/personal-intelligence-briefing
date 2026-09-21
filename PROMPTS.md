@@ -1497,3 +1497,24 @@ discard limitation where the old code failed, and one run with no valid selectio
 failed naming the discards — but 3 of 4 items still mismatched, so the mismatch
 root cause is now BRIEF-07 and the optional repair call BRIEF-06. `npm run check`
 passes with 209 tests.
+
+### Hosted SearXNG Container deployed (2026-09-21)
+
+**User instruction (verbatim):** "let's deploy the searXNG container as well in cloudflare"
+
+**Material action:** Generate `SEARXNG_SECRET` and store it as a Worker secret, dry-run
+the deployment, deploy the Worker with the container class, then probe the deployed
+hostname.
+
+**Outcome:** `npm run deploy:dry-run` reported the container binding and one available
+image; `wrangler secret put SEARXNG_SECRET` stored a generated 32-byte secret; `npm run
+deploy` pushed the pinned image to the Cloudflare registry and created container
+application `personal-intelligence-briefing-searxngcontainer` (`instance_type: lite`,
+`max_instances: 1`, tiers 1-2) with Worker version
+`3896ea3a-2b1c-49a0-8565-407c9a3c3181` at
+`personal-intelligence-briefing.chiraniamanav15.workers.dev`. Unauthenticated probes of
+`/`, `/api/health`, and `/api/briefings/today` all answer 302 to the Access login, so the
+hostname policy is enforcing. Containers require a Workers Paid plan, which supersedes
+the earlier free-tier decision recorded in DISC-11 and the plan. Hosted generation
+through the Container is still unverified: the Container starts on demand and the only
+caller is the authenticated generation route.
