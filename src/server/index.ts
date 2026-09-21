@@ -11,8 +11,13 @@ import {
   noStore,
   requireIdentity,
   sameOrigin,
+  type Env,
   type HttpEnv,
 } from './routes/policy';
+import {
+  startDueScheduledBriefing,
+  type ScheduledBriefingStartResult,
+} from './scheduled-briefing';
 
 export { PersonalBriefingAgent } from './preferences-agent';
 export { BriefingWorkflow } from './briefing-workflow';
@@ -44,4 +49,17 @@ app.all('/agents/*', async (c) => {
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 app.onError((_error, c) => c.json({ error: 'Internal server error' }, 500));
 
-export default app;
+/**
+ * Worker entry: HTTP plus the cron tick that reserves a due daily briefing.
+ *
+ * The tick bypasses HTTP and Access entirely; it reads only its own bindings.
+ */
+export default {
+  fetch: app.fetch,
+  scheduled(
+    controller: ScheduledController,
+    env: Env,
+  ): Promise<ScheduledBriefingStartResult> {
+    return startDueScheduledBriefing(env, new Date(controller.scheduledTime));
+  },
+};

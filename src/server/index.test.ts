@@ -41,4 +41,17 @@ describe('Worker HTTP interface', () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'Not found' });
   });
+
+  it('exposes a scheduled handler that needs no request identity', async () => {
+    expect(
+      await worker.scheduled(
+        {
+          cron: '*/15 * * * *',
+          scheduledTime: Date.parse('2026-09-21T02:30:00Z'),
+          noRetry: () => undefined,
+        },
+        {},
+      ),
+    ).toEqual({ started: false, reason: 'agent-unavailable' });
+  });
 });

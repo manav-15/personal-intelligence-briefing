@@ -698,6 +698,160 @@ describe('persistence document contract', () => {
   });
 });
 
+describe('scheduled briefing reservation', () => {
+  const atEightIst = new Date('2026-09-21T02:30:00Z');
+
+  it('refuses before preferences are saved and when no topic is enabled', () => {
+    expect(
+      inMemoryAgent().reserveScheduledBriefingRun('test-user', atEightIst),
+    ).toEqual({ created: false, reason: 'not-configured' });
+
+    const withoutTopics = {
+      ...examplePreferences,
+      topics: examplePreferences.topics.map((topic) => ({
+        ...topic,
+        enabled: false,
+      })),
+    };
+
+    expect(
+      configuredAgent(withoutTopics).reserveScheduledBriefingRun(
+        'test-user',
+        atEightIst,
+      ),
+    ).toEqual({ created: false, reason: 'no-topics' });
+  });
+
+  it('follows the saved timezone instead of a fixed UTC hour', () => {
+    const utc = configuredAgent({
+      ...examplePreferences,
+      global: {
+        ...examplePreferences.global,
+        schedule: { localTime: '08:00', timezone: 'UTC' },
+      },
+    });
+
+    expect(utc.reserveScheduledBriefingRun('test-user', atEightIst)).toEqual({
+      created: false,
+      reason: 'not-due',
+      date: '2026-09-21',
+    });
+    expect(
+      utc.reserveScheduledBriefingRun(
+        'test-user',
+        new Date('2026-09-21T08:00:00Z'),
+      ),
+    ).toMatchObject({ created: true, date: '2026-09-21' });
+  });
+
+  it('stamps the trigger that reserved the run', () => {
+    const scheduledAgent = configuredAgent();
+    const manualAgent = configuredAgent();
+    const scheduled = scheduledAgent.reserveScheduledBriefingRun(
+      'test-user',
+      atEightIst,
+    );
+    const manual = manualAgent.reserveManualBriefingRun(
+      'test-user',
+      atEightIst,
+    );
+
+    if (!scheduled.created || !manual.ok)
+      throw new Error('Expected both reservations to succeed.');
+    expect(runTrigger(scheduledAgent, scheduled.runId)).toBe('scheduled');
+    expect(runTrigger(manualAgent, manual.runId)).toBe('manual');
+  });
+
+  it('skips a later tick once the scheduled edition is published', () => {
+    const agent = configuredAgent();
+    const reserved = agent.reserveScheduledBriefingRun('test-user', atEightIst);
+
+    if (!reserved.created) throw new Error('Expected a reservation.');
+    publishEdition(agent, reserved.runId, reserved.date, 1);
+    expect(
+      agent.reserveScheduledBriefingRun(
+        'test-user',
+        new Date('2026-09-21T05:00:00Z'),
+      ),
+    ).toEqual({
+      created: false,
+      reason: 'already-published',
+      date: '2026-09-21',
+    });
+  });
+
+  it('coalesces a tick onto the run that is already running', () => {
+    const agent = configuredAgent();
+    const first = agent.reserveScheduledBriefingRun('test-user', atEightIst);
+
+    if (!first.created) throw new Error('Expected a reservation.');
+    expect(
+      agent.reserveScheduledBriefingRun(
+        'test-user',
+        new Date('2026-09-21T02:45:00Z'),
+      ),
+    ).toEqual({
+      created: false,
+      reason: 'already-running',
+      runId: first.runId,
+      date: '2026-09-21',
+    });
+    expect(
+      testDatabase(agent)
+        .prepare(
+          "SELECT COUNT(*) AS count FROM briefing_runs WHERE status = 'running'",
+        )
+        .all()[0],
+    ).toEqual({ count: 1 });
+  });
+
+  it('retries after a failure but never after publication', () => {
+    const agent = configuredAgent();
+    const failed = agent.reserveScheduledBriefingRun('test-user', atEightIst);
+
+    if (!failed.created) throw new Error('Expected a reservation.');
+    agent.failBriefingRun(failed.runId, 'test-user', 'Collection failed.');
+    const retried = agent.reserveScheduledBriefingRun(
+      'test-user',
+      new Date('2026-09-21T02:45:00Z'),
+    );
+
+    expect(retried).toMatchObject({ created: true, date: '2026-09-21' });
+
+    if (!retried.created) throw new Error('Expected a retry.');
+    expect(retried.runId).not.toBe(failed.runId);
+    publishEdition(agent, retried.runId, retried.date, 1);
+    expect(
+      agent.reserveScheduledBriefingRun(
+        'test-user',
+        new Date('2026-09-21T05:00:00Z'),
+      ),
+    ).toMatchObject({ created: false, reason: 'already-published' });
+  });
+
+  it('still allows a manual edition after the scheduled one is published', () => {
+    const agent = configuredAgent();
+    const scheduled = agent.reserveScheduledBriefingRun(
+      'test-user',
+      atEightIst,
+    );
+
+    if (!scheduled.created) throw new Error('Expected a reservation.');
+    publishEdition(agent, scheduled.runId, scheduled.date, 1);
+    const manual = agent.reserveManualBriefingRun('test-user', atEightIst);
+
+    expect(manual).toMatchObject({
+      ok: true,
+      created: true,
+      date: '2026-09-21',
+    });
+
+    if (!manual.ok) throw new Error('Expected a manual reservation.');
+    expect(manual.runId).not.toBe(scheduled.runId);
+    expect(runTrigger(agent, manual.runId)).toBe('manual');
+  });
+});
+
 function temporaryCollection() {
   return {
     candidates: [
@@ -730,6 +884,71 @@ function temporaryCollection() {
 
 function testDatabase(agent: PersonalBriefingAgent): DatabaseSync {
   return (agent as unknown as { testDatabase: DatabaseSync }).testDatabase;
+}
+
+function configuredAgent(document = examplePreferences): PersonalBriefingAgent {
+  const agent = inMemoryAgent();
+  const saved = agent.replacePreferences(document, 0, 'test-user');
+
+  if (!saved.ok) throw new Error('Expected preferences to save.');
+
+  return agent;
+}
+
+function runTrigger(agent: PersonalBriefingAgent, runId: string): string {
+  const [row] = testDatabase(agent)
+    .prepare('SELECT trigger FROM briefing_runs WHERE id = ?')
+    .all(runId);
+
+  if (row === null || typeof row !== 'object' || !('trigger' in row))
+    throw new Error('Expected the run to store a trigger.');
+
+  return String(row.trigger);
+}
+
+function publishEdition(
+  agent: PersonalBriefingAgent,
+  runId: string,
+  date: string,
+  preferenceRevision: number,
+): void {
+  const stored = agent.storeBriefingCollection(
+    runId,
+    temporaryCollection(),
+    'test-user',
+  );
+
+  if (!stored) throw new Error('Expected the collection to store.');
+  const published = agent.publishBriefing(
+    briefingSchema.parse({
+      schemaVersion: 1,
+      runId,
+      date,
+      preferenceRevision,
+      completeness: 'complete',
+      limitations: [],
+      items: [
+        {
+          id: 'example-story',
+          topicIds: ['ai'],
+          headline: 'Example story',
+          summary: 'An evidence-grounded summary.',
+          publishedAt: null,
+          citations: [
+            {
+              sourceUrl: 'https://publisher.example/article',
+              publisher: 'Example',
+              evidenceTier: 'article',
+            },
+          ],
+        },
+      ],
+      publishedAt: `${date}T02:40:00.000Z`,
+    }),
+    'test-user',
+  );
+
+  if (!published.ok) throw new Error('Expected the edition to publish.');
 }
 
 function inMemoryAgent(): PersonalBriefingAgent {

@@ -543,6 +543,12 @@ function SettingsForm({
       >
         <fieldset>
           <legend>Schedule and reading budget</legend>
+          <p className="hint">
+            The Worker checks this local time every fifteen minutes and
+            generates today&apos;s edition once it has arrived. It skips a day
+            that already has an edition, and you can still generate one yourself
+            at any time.
+          </p>
           <div className="field-grid">
             <Field label="Daily local time">
               <input

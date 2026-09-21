@@ -55,6 +55,7 @@ import {
 } from '../shared/chat';
 import { evidenceSchema, storyCandidateSchema } from '../shared/inspection';
 import { boundedMessage, logEvent } from './log';
+import { isScheduledTimeReached, localDate } from './local-clock';
 import { z } from 'zod';
 
 /** Bindings used by the singleton preferences Agent. */
@@ -91,6 +92,21 @@ export type BriefingRunStartResult =
 export type ManualBriefingRunResult =
   | { ok: true; runId: string; date: string; created: boolean }
   | { ok: false; error: string };
+
+/** Outcome of a scheduled tick's reservation attempt. */
+export type ScheduledBriefingReserveResult =
+  | { created: true; runId: string; date: string }
+  | {
+      created: false;
+      reason:
+        | 'not-configured'
+        | 'no-topics'
+        | 'not-due'
+        | 'already-published'
+        | 'already-running';
+      runId?: string;
+      date?: string;
+    };
 
 /** Outcome of atomically publishing an already composed briefing. */
 export type BriefingPublishResult =
@@ -300,38 +316,84 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         ok: false,
         error: 'Enable at least one topic before generating a briefing.',
       };
+
     this.expireBriefingRuns(userId, now);
     const date = localDate(now, stored.preferences.global.schedule.timezone);
 
     return this.ctx.storage.transactionSync(() => {
-      const active = [
-        ...this.ctx.storage.sql.exec<{ id: string }>(
-          `SELECT id FROM briefing_runs WHERE user_id = ? AND status = 'running' ORDER BY created_at ASC LIMIT 1`,
-          userId,
-        ),
-      ][0];
+      const active = this.activeRunningBriefingRunId(userId);
 
       if (active !== undefined)
-        return { ok: true, runId: active.id, date, created: false };
-      const runId = crypto.randomUUID();
-      const snapshot = briefingCollectionSnapshotSchema.parse({
-        runId,
-        preferenceRevision: stored.preferences.revision,
-        preferences: stored.preferences,
-        budget: defaultBriefingCollectionBudget,
-      });
+        return { ok: true, runId: active, date, created: false };
 
-      this.ctx.storage.sql.exec(
-        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at) VALUES (?, ?, ?, 'running', ?, datetime('now'))`,
-        runId,
-        userId,
-        stored.preferences.revision,
-        JSON.stringify(snapshot),
-      );
-
-      return { ok: true, runId, date, created: true };
+      return {
+        ok: true,
+        runId: this.insertRunningBriefingRun(
+          userId,
+          stored.preferences,
+          'manual',
+        ),
+        date,
+        created: true,
+      };
     });
   }
+
+  /**
+   * Reserves a scheduled run when the saved local time has been reached and
+   * today's edition does not already exist. Does not launch the Workflow.
+   */
+  reserveScheduledBriefingRun(
+    userId: UserId,
+    now = new Date(),
+  ): ScheduledBriefingReserveResult {
+    this.ensureSchema();
+    const stored = this.readStoredPreferences(userId);
+
+    if (!stored.configured) return { created: false, reason: 'not-configured' };
+
+    if (!stored.preferences.topics.some((topic) => topic.enabled))
+      return { created: false, reason: 'no-topics' };
+
+    this.expireBriefingRuns(userId, now);
+    const reached = isScheduledTimeReached(
+      now,
+      stored.preferences.global.schedule,
+    );
+
+    if (!reached.due)
+      return { created: false, reason: 'not-due', date: reached.date };
+
+    return this.ctx.storage.transactionSync(() => {
+      if (this.hasPublishedBriefingOn(userId, reached.date))
+        return {
+          created: false,
+          reason: 'already-published' as const,
+          date: reached.date,
+        };
+
+      const active = this.activeRunningBriefingRunId(userId);
+
+      if (active !== undefined)
+        return {
+          created: false,
+          reason: 'already-running' as const,
+          runId: active,
+          date: reached.date,
+        };
+
+      return {
+        created: true,
+        runId: this.insertRunningBriefingRun(
+          userId,
+          stored.preferences,
+          'scheduled',
+        ),
+        date: reached.date,
+      };
+    });
+  }
+
   /** Reads the validated preferences document without creating a first-run record. */
   readPreferences(userId: UserId): StoredPreferences {
     this.ensureSchema();
@@ -559,11 +621,12 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
           : { ok: false, error: 'Briefing run ID is already in use.' };
 
       this.ctx.storage.sql.exec(
-        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at) VALUES (?, ?, ?, 'running', ?, datetime('now'))`,
+        `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at, trigger) VALUES (?, ?, ?, 'running', ?, datetime('now'), ?)`,
         run.runId,
         userId,
         run.preferenceRevision,
         JSON.stringify(snapshot),
+        'manual',
       );
 
       return { ok: true, created: true };
@@ -1281,6 +1344,55 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
     });
   }
 
+  /** Inserts one running reservation. Caller must already be inside a transaction. */
+  private insertRunningBriefingRun(
+    userId: UserId,
+    preferences: Preferences,
+    trigger: 'manual' | 'scheduled',
+    runId = crypto.randomUUID(),
+  ): string {
+    const snapshot = briefingCollectionSnapshotSchema.parse({
+      runId,
+      preferenceRevision: preferences.revision,
+      preferences,
+      budget: defaultBriefingCollectionBudget,
+    });
+
+    this.ctx.storage.sql.exec(
+      `INSERT INTO briefing_runs (id, user_id, preference_revision, status, collection_snapshot, created_at, trigger) VALUES (?, ?, ?, 'running', ?, datetime('now'), ?)`,
+      runId,
+      userId,
+      preferences.revision,
+      JSON.stringify(snapshot),
+      trigger,
+    );
+
+    return runId;
+  }
+
+  /** Returns the oldest active run id for this owner, if any. */
+  private activeRunningBriefingRunId(userId: UserId): string | undefined {
+    return [
+      ...this.ctx.storage.sql.exec<{ id: string }>(
+        `SELECT id FROM briefing_runs WHERE user_id = ? AND status = 'running' ORDER BY created_at ASC LIMIT 1`,
+        userId,
+      ),
+    ][0]?.id;
+  }
+
+  /** Whether this owner already has a published edition on the local calendar date. */
+  private hasPublishedBriefingOn(userId: UserId, date: string): boolean {
+    return (
+      [
+        ...this.ctx.storage.sql.exec<{ run_id: string }>(
+          `SELECT run_id FROM briefings WHERE user_id = ? AND date = ? LIMIT 1`,
+          userId,
+          date,
+        ),
+      ][0] !== undefined
+    );
+  }
+
   /** Applies idempotent, versioned schema migrations before every public operation. */
   private ensureSchema(): void {
     this.ctx.storage.transactionSync(() => {
@@ -1395,13 +1507,23 @@ export class PersonalBriefingAgent extends AIChatAgent<PreferencesAgentEnv> {
         );
       }
 
-      if (hasMigration(9)) return;
-      this.ctx.storage.sql.exec(
-        `CREATE TABLE briefing_evidence (run_id TEXT NOT NULL, item_id TEXT NOT NULL, source_url TEXT NOT NULL, publisher TEXT, evidence_tier TEXT NOT NULL, retrieved_at TEXT NOT NULL, characters INTEGER NOT NULL, truncated INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (run_id, item_id, source_url), FOREIGN KEY (run_id) REFERENCES briefings(run_id))`,
-      );
-      this.ctx.storage.sql.exec(
-        `INSERT INTO schema_migrations (version, applied_at) VALUES (9, datetime('now'))`,
-      );
+      if (!hasMigration(9)) {
+        this.ctx.storage.sql.exec(
+          `CREATE TABLE briefing_evidence (run_id TEXT NOT NULL, item_id TEXT NOT NULL, source_url TEXT NOT NULL, publisher TEXT, evidence_tier TEXT NOT NULL, retrieved_at TEXT NOT NULL, characters INTEGER NOT NULL, truncated INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (run_id, item_id, source_url), FOREIGN KEY (run_id) REFERENCES briefings(run_id))`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (9, datetime('now'))`,
+        );
+      }
+
+      if (!hasMigration(10)) {
+        this.ctx.storage.sql.exec(
+          `ALTER TABLE briefing_runs ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual'`,
+        );
+        this.ctx.storage.sql.exec(
+          `INSERT INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'))`,
+        );
+      }
     });
   }
 }
@@ -1444,23 +1566,6 @@ function latestChatQuestion(
         content: parsed.data.content,
       }
     : null;
-}
-
-function localDate(now: Date, timezone: string): string {
-  const values = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const year = values.find((part) => part.type === 'year')?.value;
-  const month = values.find((part) => part.type === 'month')?.value;
-  const day = values.find((part) => part.type === 'day')?.value;
-
-  if (year === undefined || month === undefined || day === undefined)
-    throw new Error('Timezone formatting did not return a complete date.');
-
-  return `${year}-${month}-${day}`;
 }
 
 /** Produces a bounded local diagnostic without persisting a model response. */

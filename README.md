@@ -2,7 +2,8 @@
 
 A single-user Cloudflare app that collects news for natural-language topic
 preferences, produces cited briefings, and supports saved follow-up conversations.
-The current submission scope uses manual generation; daily scheduling is deferred.
+A Worker cron checks every fifteen minutes and generates the daily edition at the
+saved local time; manual generation stays available.
 
 ## What works
 
@@ -12,6 +13,10 @@ The current submission scope uses manual generation; daily scheduling is deferre
   composition, immutable editions, and an archive. Multiple SearXNG engines
   provide redundancy. Engine and publisher failures remain visible; useful
   results can produce an explicitly incomplete edition.
+- A `*/15 * * * *` Worker cron runs the daily edition without HTTP or Access: the
+  Agent decides from the saved local time and timezone, skips a date that already
+  has an edition or a run in progress, and retries later in the day after a
+  failure. Manual generation is unchanged.
 - Story-scoped saved chat with retained evidence, the latest 12 messages as model
   history, and the latest 200 messages displayed. Conversations can be deleted.
 - Cloudflare Access identity verification and owner-scoped HTTP/Agent routing.
@@ -49,6 +54,14 @@ Local variables enable inspection and the local owner, set the loopback SearXNG
 URL, and blank the production Access values. Keep `.dev.vars` and the generated
 `infra/searxng/.env` out of Git. Local app state lives under `.wrangler`.
 
+The cron does not fire under `npm run dev`. To run one tick against the local
+Worker, start it with `--test-scheduled` and request the scheduled endpoint:
+
+```sh
+npx wrangler dev --config wrangler.jsonc --test-scheduled
+curl "http://127.0.0.1:8787/cdn-cgi/handler/scheduled?cron=*%2F15+*+*+*+*"
+```
+
 If the remote AI proxy targets an Access-protected deployment, noninteractive
 startup also requires `CLOUDFLARE_ACCESS_CLIENT_ID` and
 `CLOUDFLARE_ACCESS_CLIENT_SECRET` in the process environment. Obtain them from an
@@ -74,7 +87,7 @@ origins, including WebSocket handshakes.
 ## Validation
 
 The current working tree passes the complete `npm run check` gate — formatting,
-lint, strict type checks, 209 tests and a production build — on Node 24, plus
+lint, strict type checks, 228 tests and a production build — on Node 24, plus
 live local Worker checks of the diagnostic and Agent routing boundaries. The same
 gate runs in GitHub Actions on every push (`.github/workflows/ci.yml`). Verifying
 the suite from a relocated checkout remains TEST-01. See the

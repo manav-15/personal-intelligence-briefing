@@ -4,13 +4,13 @@ Last updated: 2026-09-21. Maintain this plan after each increment or scope
 decision. Record evidence, limitations, and review status; do not mark a whole
 milestone complete when only a smaller slice is delivered.
 
-## Current status: security, SearXNG-only discovery, chat and composition (2026-09-21)
+## Current status: security, SearXNG-only discovery, chat, composition and scheduling (2026-09-21)
 
 The working tree contains the route-security fixes (SEC-01), SearXNG-only
 discovery with private Container wiring (DISC-10 / DEPLOY-01), the removal of the
 retired Google News and GDELT providers, recent chat history and UI request
-handling (CHAT-02), and a portable test alias (TEST-01). These changes await
-review; none has been deployed in this increment.
+handling (CHAT-02), a portable test alias (TEST-01), and daily scheduling
+(SCHED-01). These changes await review; none has been deployed in this increment.
 
 Feasibility diagnostics require the local inspection flag, identity and origin
 checks. Agent routing validates the personal-briefing binding and owner for every
@@ -46,15 +46,62 @@ whose every selection was discarded, and that message names the discards. The
 prompt also states that a presentation topic must belong to the item's own
 candidates, and the composition prompt version is `2026-09-21.2`.
 
+Daily scheduling now exists (SCHED-01). The Worker exports `fetch` plus a
+`scheduled` handler, and `wrangler.jsonc` declares `*/15 * * * *`. A tick never
+enters Hono: `startDueScheduledBriefing` reads only `PERSONAL_BRIEFING` and
+`BRIEFING_WORKFLOW`, addresses the same owner id the HTTP routes use
+(`PRIMARY_USER_ID || "single-user"`), and asks the Agent to reserve a run.
+`reserveScheduledBriefingRun` derives the local date and clock from the saved
+`{ localTime, timezone }`, treats the window as due from that time until local
+midnight, and inside one transaction skips a date that already has a published
+edition or a running reservation. Skips are silent — 96 ticks a day must not
+produce 96 log lines — while a start logs `briefing.scheduled` and a Workflow
+create failure closes the reservation and logs `briefing.failed`. Migration 10
+adds `briefing_runs.trigger` with `'manual'` as the default for existing rows, so
+manual and scheduled runs remain distinguishable; manual generation is otherwise
+unchanged and may still publish a second edition on a date that already has one.
+
 ### Validation already performed
 
 - Current working tree: the complete `npm run check` gate passes on Node 24 —
-  formatting, lint, strict type checks, 209 tests across 20 files, and the
+  formatting, lint, strict type checks, 228 tests across 22 files, and the
   production build. The earlier states recorded 224 tests (security-only) and 220
   tests (before the provider removal); the drop is the deleted Google News,
   decoder, GDELT and mixed legacy test files, offset by publisher-evidence cases
   moved into `evidence.test.ts` and the chat-boundary and composition cases added
   since.
+- Scheduling (SCHED-01): `local-clock.test.ts` covers the Asia/Kolkata calendar
+  date, 08:00 IST as 02:30 UTC, the not-due/due boundary, the rollover to a new
+  date at local midnight, and a changed timezone. `scheduled-briefing.test.ts`
+  covers both missing bindings, a successful launch with its `briefing.scheduled`
+  line and Workflow parameters, a silent skip for a reservation refusal, a
+  Workflow create failure that closes the reservation, and the owner id with and
+  without `PRIMARY_USER_ID`. `preferences-agent.test.ts` covers not-configured,
+  no-topics, the saved timezone, the `trigger` stamp for both paths,
+  already-published, already-running coalescing with one running row, retry after
+  failure, no retry after publication, and a manual edition after a published
+  scheduled one. `index.test.ts` calls `worker.scheduled` with an empty
+  environment and gets `agent-unavailable`, which proves the tick needs no
+  request identity.
+- Live local scheduled path: a tick is triggered with
+  `GET /cdn-cgi/handler/scheduled?cron=*/15 * * * *` under
+  `wrangler dev --test-scheduled`, because dev never fires cron on its own. In a
+  throwaway state with preferences saved as due at `00:00 UTC`, the tick logged
+  `briefing.scheduled` and then `briefing.started`, and the run published a
+  one-item partial edition; a tick after that run had failed scheduled a new run,
+  and a tick after the saved time had moved past (23:59 UTC) logged nothing. In
+  the owner's existing local state the same tick applied migration 10 and skipped
+  silently, because that local date already had an edition. Reading the Durable
+  Object SQLite directly confirmed migrations 2–10, three runs stamped
+  `trigger = 'scheduled'`, one manual run stamped `trigger = 'manual'`, and all
+  twelve pre-existing rows left at `'manual'`. The corrected schedule copy was
+  checked in the browser at `/settings` against the local Worker.
+- Local dev artifact (DEV-02): under `wrangler dev`, a run that ends in
+  composition failure is followed by a runtime message that the request was
+  canceled because the Worker's code had hung. It appears on the manual
+  `POST /api/briefings/generate` path too, which this increment does not change,
+  and not after a published run, so it is recorded as a local harness question
+  rather than a scheduling defect.
 - Composition rejection: `briefing-composition.test.ts` covers every rejection
   category, a mixed draft that publishes the valid story with the
   `composition-rejected` limitation, a draft whose whole selection set was
@@ -223,12 +270,17 @@ pages that are neither news nor retrievable.
 
 ### Scope and next slice
 
-Manual generation is the submission scope; SCHED-01 and DISC-11 are deferred, and
-the schedule settings still read as if active until SCHED-01 is picked up.
+Daily scheduling is implemented (SCHED-01) and the schedule settings now describe
+what the Worker does. DISC-11 remains deferred.
 SearXNG engine and publisher errors are expected and must remain visible. Current
 work has stopped at documentation completion. The next implementation work, when
 resumed, follows the existing backlog entries; this section is not a second
 TODO list. Historical milestones below describe earlier scope and evidence.
+
+Update log: 2026-09-21 (ninth entry) — implemented the `*/15 * * * *` Worker cron
+with an Agent-side due-check and a `trigger` column, so the daily edition no
+longer depends on a manual request; recorded that manual generation, its
+same-day second edition, and the silent-skip policy are unchanged.
 
 Update log: 2026-09-21 (eighth entry) — measured the general-category and
 time-range arms, found both dead ends (`news + day` and `general + day` return
@@ -619,6 +671,16 @@ quality or daily coverage.
 
 ## Update log
 
+- **2026-09-21:** Implemented SCHED-01: a `*/15 * * * *` Worker cron reserves and
+  launches the daily briefing with no HTTP and no Access. The Agent decides
+  due-ness from the saved `{ localTime, timezone }` (due until local midnight),
+  skips unconfigured, topic-less, early, already-published, and already-running
+  ticks silently, retries after a failure on a later tick, and never re-publishes a
+  date. Migration 10 adds `briefing_runs.trigger` (`'manual'` for existing rows),
+  so manual and scheduled runs stay distinguishable while manual generation is
+  unchanged and may still publish a second edition the same day. Verified by the
+  full `npm run check` gate (228 tests, 22 files) and by a locally triggered tick
+  in `wrangler dev`, which is required because dev never fires cron on its own.
 - **2026-09-21:** Removed the code-owned citation append from chat, at the owner's
   direction. `ensureChatCitation` appended `[S1]` to any answer that contained no
   label, which was defensible while outside knowledge was forbidden and became

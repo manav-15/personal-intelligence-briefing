@@ -2,7 +2,9 @@
 
 The current production configuration uses Workers Static Assets, a personal SQLite Durable Object, a
 briefing Workflow, Workers AI, and one private SearXNG Container. Generation is
-manual. The Container and the Worker are deployed (2026-09-21); a hosted
+scheduled by the Worker's `*/15 * * * *` cron and can also be requested manually;
+the cron path never passes through HTTP or Access. The Container and the Worker
+are deployed (2026-09-21); a hosted
 generation through the Container has not been run yet, so hosted engine coverage
 remains unverified (DISC-10). Deployment remains a separately reviewed action.
 
@@ -64,6 +66,11 @@ The scripts explicitly pass `--config wrangler.jsonc` so the generated Vite
 configuration cannot accidentally change deployment path resolution. A dry run
 does not establish successful hosted Container startup or AI inference.
 
+`wrangler.jsonc` declares the cron trigger `*/15 * * * *`. Deploying with it
+creates the Worker's scheduled event source; a tick that is early, already
+published, or already running is a silent no-op, so the trigger cannot create
+duplicate editions.
+
 ## Post-deploy verification
 
 1. Without a session, the hostname requires Access authentication. Direct owner
@@ -76,6 +83,9 @@ does not establish successful hosted Container startup or AI inference.
    connection works through Access.
 5. Reopen the saved edition and chat after reload. Verify total collection
    failure preserves existing editions and partial failure remains labelled.
+6. Confirm the scheduled path from the logs: a tick after the saved local time
+   logs `briefing.scheduled` once and the run publishes, while later ticks that
+   day log nothing because the edition exists.
 
 ## Logs
 

@@ -1616,3 +1616,25 @@ that all answered 403 to evidence retrieval, so their ceiling was headline-only;
 CAPTCHA'd. Brave (general) is disabled again with the measurement written beside the
 engine set, and DISC-12 plus the implementation plan record the table. A throwaway probe
 script was used and deleted; no production code changed.
+
+### Daily briefing scheduling without HTTP (2026-09-21)
+
+**User instruction (verbatim):** "Increment is SCHED-01: 15-minute cron + Agent due-check, no HTTP generate." The
+approved design was delivered with it: cron `*/15 * * * *` with the Agent deciding due-ness from the saved
+`{ localTime, timezone }`; due from that local `HH:MM` until local midnight with no hardcoded cutoff; skip when
+unconfigured, topic-less, not due, already published, or already running; scheduled ticks may retry after a failure
+but never after publication; manual `POST /api/briefings/generate` unchanged and still allowed the same day; no public
+schedule route and Access never sees the tick; owner `PRIMARY_USER_ID || "single-user"`; `trigger: 'manual' |
+'scheduled'` stamped on `briefing_runs`; settings copy corrected; docs and `PROMPTS.md` updated before review.
+
+**Material coding prompt:** Export a `scheduled` handler alongside `fetch` from the Worker entry, declare the cron in
+`wrangler.jsonc`, add migration 10 for `briefing_runs.trigger` defaulting existing rows to `'manual'`, cover the due
+window, the skip reasons, the post-failure retry, the running-run coalescing and the manual path with tests, then
+update the backlog row, implementation plan, architecture note, README and deployment guide.
+
+**Outcome:** `src/server/local-clock.ts` (local date and minutes-from-midnight, due until local midnight),
+`scheduled-briefing.ts` (reserve then create the Workflow, silent skips, `briefing.scheduled` on a start and
+`briefing.failed` when creation fails), `reserveScheduledBriefingRun` (due-check, published-date check and running-run
+coalescing inside one transaction), and migration 10 are wired to the Worker's `scheduled` export with
+`"triggers": { "crons": ["*/15 * * * *"] }`. Manual generation is untouched. Verified with `npm run check` (228 tests
+across 22 files) and a locally triggered tick, since `wrangler dev` does not fire cron on its own.

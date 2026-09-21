@@ -14,7 +14,18 @@ scripts were removed on 2026-09-21: SearXNG is the only discovery provider, and
 the local feasibility probe now exercises it instead of a retired channel. An
 aggregator redirect link is never treated as article evidence.
 
-Generation is manual in the submission scope (SCHED-01 deferred). The Agent owns
+Generation is scheduled and still available manually (SCHED-01). A
+`*/15 * * * *` Worker cron calls `startDueScheduledBriefing`, which reads only its
+own bindings: the Agent decides due-ness from the saved `{ localTime, timezone }`
+and reserves one run per local calendar date, then the Worker creates the
+Workflow. The tick never enters Hono, so Access identity and same-origin policy do
+not apply to it, and the owner id matches the HTTP path
+(`PRIMARY_USER_ID || "single-user"`). A tick that is early, has no saved or
+enabled topics, already published today, or already has a running reservation is a
+silent no-op; a failed run can retry on a later tick, a published date never does,
+and a manual request may still publish a second edition the same day. Each run
+records its `trigger` (`manual` | `scheduled`) so the two paths stay
+distinguishable. The Agent owns
 preferences, editions, retained evidence and conversations; the Workflow handles
 bounded collection, composition and atomic publication. The private Container
 configuration is implemented locally but is not yet deployed or hosted-verified
@@ -45,8 +56,9 @@ daily briefing pipeline.
 ## HTTP composition (2026-09-18)
 
 Pinned Hono 4.13.8 replaces manual Worker dispatch. `src/server/index.ts`
-composes the route groups in `src/server/routes/` and preserves the
-`PersonalBriefingAgent` export. Hono owns HTTP validation and responses; discovery,
+composes the route groups in `src/server/routes/`, preserves the
+`PersonalBriefingAgent` export, and adds the `scheduled` handler beside Hono's
+`fetch` (SCHED-01). Hono owns HTTP validation and responses; discovery,
 evidence, shared Zod contracts, and Agent RPC remain separate. Small middleware
 functions handle diagnostic flags, origin rejection, method checks, and cache
 headers. There is no controller/service framework.

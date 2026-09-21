@@ -8,6 +8,10 @@
   // so there is no second, easily-forgotten surface to protect.
   "workers_dev": true,
   "preview_urls": false,
+  // The Worker wakes every fifteen minutes and the Agent decides whether the
+  // saved local time has arrived. Early, already-published, and already-running
+  // ticks are silent no-ops, so a failed run can retry later the same day.
+  "triggers": { "crons": ["*/15 * * * *"] },
   // Workers Logs keeps the structured events from src/server/log.ts plus request
   // invocation logs. They carry counts, identifiers and code-owned messages only.
   "observability": {
